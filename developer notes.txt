@@ -1,0 +1,4 @@
+Integrate CheckCUDA into program and make sure it takes advantage of object and text recongization that is accelerated by CUDA
+Make a selected work area on the display and isolate screenshots to this area.
+KeyBoard shortcut to stop actions and add more to the prompt.
+Automatic reprompting for reduntancy and checks
