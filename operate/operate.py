@@ -51,7 +51,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
     if define_region:
         print("Region definition mode activated.")
-        from utils.area_selector import select_area
+        from operate.utils.area_selector import select_area
 
         region = select_area()
         print(f"Selected region: {region}")
