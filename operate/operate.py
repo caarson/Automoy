@@ -30,7 +30,7 @@ config = Config()
 operating_system = OperatingSystem()
 
 
-def main(model, terminal_prompt, voice_mode=False, verbose_mode=False):
+def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_region=False):
     """
     Main function for the Self-Operating Computer.
 
@@ -48,6 +48,12 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False):
 
     config.verbose = verbose_mode
     config.validation(model, voice_mode)
+
+    if define_region:
+        # Implement the logic to define the region here
+        # This could be an interactive session where the user selects a region
+        print("Region definition mode activated.")
+        # Continue with the main functionality after defining the region
 
     if voice_mode:
         try:

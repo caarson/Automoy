@@ -40,13 +40,21 @@ def main_entry():
         required=False,
     )
 
+    # Define a region of working area on the screen (W)
+    parser.add_argument(
+        "--define-region",
+        help="Enable region definition mode to restrict operations within a specified screen area",
+        action="store_true",
+    )
+
     try:
         args = parser.parse_args()
         main(
             args.model,
             terminal_prompt=args.prompt,
             voice_mode=args.voice,
-            verbose_mode=args.verbose
+            verbose_mode=args.verbose,
+            define_region=args.define_region
         )
     except KeyboardInterrupt:
         print(f"\n{ANSI_BRIGHT_MAGENTA}Exiting...")
