@@ -1,3 +1,5 @@
+The project is originally derived from Self-Operating Computer by HyperWrite AI - Automoy extends on this API and makes deploying an autonomous agent easy. This version uses GPU to accelerate the OCR and object recognition tasks.
+
 <h1 align="center">Self-Operating Computer Framework</h1>
 
 <p align="center">
