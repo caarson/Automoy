@@ -50,9 +50,12 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     config.validation(model, voice_mode)
 
     if define_region:
-        # Implement the logic to define the region here
-        # This could be an interactive session where the user selects a region
         print("Region definition mode activated.")
+        from utils.area_selector import select_area
+
+        region = select_area()
+        print(f"Selected region: {region}")
+        
         # Continue with the main functionality after defining the region
 
     if voice_mode:
@@ -137,57 +140,59 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
             break
 
 
-def operate(operations, model):
+import time
+
+def operate(operations, model, region=None):
+    # Function to check if a point is within the defined region
+    def is_within_region(x, y, region):
+        """Check if a point is within the defined region."""
+        x1, y1, x2, y2 = region
+        return x1 <= x <= x2 and y1 <= y <= y2
+
     if config.verbose:
-        print("[Self Operating Computer][operate]")
+        print("[Self Operating Computer][operate] Starting operations")
+
     for operation in operations:
         if config.verbose:
-            print("[Self Operating Computer][operate] operation", operation)
-        # wait one second
-        time.sleep(1)
+            print("[Self Operating Computer][operate] Processing operation", operation)
+        
+        time.sleep(1)  # Delay for demonstration purposes
         operate_type = operation.get("operation").lower()
-        operate_thought = operation.get("thought")
         operate_detail = ""
+        
         if config.verbose:
-            print("[Self Operating Computer][operate] operate_type", operate_type)
+            print("[Self Operating Computer][operate] Operation type:", operate_type)
+
+        # Check if operation coordinates are within the defined region, if region is specified
+        if region:
+            x = operation.get("x", 0)
+            y = operation.get("y", 0)
+            if not is_within_region(x, y, region):
+                print(f"Operation at ({x}, {y}) is outside the defined region and will be skipped.")
+                continue  # Skip this operation as it's outside the defined region
 
         if operate_type == "press" or operate_type == "hotkey":
             keys = operation.get("keys")
-            operate_detail = keys
+            operate_detail = f"keys: {keys}"
             operating_system.press(keys)
         elif operate_type == "write":
             content = operation.get("content")
-            operate_detail = content
+            operate_detail = f"content: '{content}'"
             operating_system.write(content)
         elif operate_type == "click":
             x = operation.get("x")
             y = operation.get("y")
-            click_detail = {"x": x, "y": y}
-            operate_detail = click_detail
-
-            operating_system.mouse(click_detail)
+            operate_detail = f"click at ({x}, {y})"
+            operating_system.mouse(x, y)
         elif operate_type == "done":
             summary = operation.get("summary")
-
-            print(
-                f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]"
-            )
-            print(f"{ANSI_BLUE}Objective Complete: {ANSI_RESET}{summary}\n")
-            return True
-
+            print(f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")
+            return True  # Stop operation when done
         else:
-            print(
-                f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] unknown operation response :({ANSI_RESET}"
-            )
-            print(
-                f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] AI response {ANSI_RESET}{operation}"
-            )
-            return True
+            print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RED} Error: unknown operation response{ANSI_RESET} {operation}")
+            return True  # Stop operation on error
 
-        print(
-            f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]"
-        )
-        print(f"{operate_thought}")
-        print(f"{ANSI_BLUE}Action: {ANSI_RESET}{operate_type} {operate_detail}\n")
+        # Print operation details
+        print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RESET} | {ANSI_BRIGHT_MAGENTA}{model}{ANSI_RESET}] Thought: {operate_thought}, Action: {ANSI_BLUE}{operate_type}{ANSI_RESET} {operate_detail}\n")
 
-    return False
+    return False  # Continue if not done
