@@ -7,12 +7,13 @@ from prompt_toolkit.styles import Style as PromptStyle
 # Define style
 style = PromptStyle.from_dict(
     {
-        "dialog": "bg:#88ff88",
-        "button": "bg:#ffffff #000000",
-        "dialog.body": "bg:#44cc44 #ffffff",
-        "dialog shadow": "bg:#003800",
+        "dialog": "bg:#cccccc",  # Light grey background
+        "button": "bg:#ffffff #000000",  # White background, black text
+        "dialog.body": "bg:#eeeeee #000000",  # Very light grey background, black text
+        "dialog shadow": "bg:#aaaaaa",  # Grey shadow
     }
 )
+
 
 
 # Check if on a windows terminal that supports ANSI escape codes

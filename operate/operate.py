@@ -2,7 +2,6 @@ import sys
 import os
 import time
 import asyncio
-from prompt_toolkit.shortcuts import message_dialog
 from prompt_toolkit import prompt
 from operate.exceptions import ModelNotRecognizedException
 import platform
@@ -52,10 +51,12 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     if define_region:
         print("Region definition mode activated.")
         from operate.utils.area_selector import select_area
-
-        region = select_area()
-        print(f"Selected region: {region}")
         
+        try:
+            region = select_area()
+            print(f"Selected region: {region}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
         # Continue with the main functionality after defining the region
 
     if voice_mode:
@@ -69,23 +70,6 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 "Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'"
             )
             sys.exit(1)
-
-    # Skip message dialog if prompt was given directly
-    if not terminal_prompt:
-        message_dialog(
-            title="Self-Operating Computer",
-            text="An experimental framework to enable multimodal models to operate computers",
-            style=style,
-        ).run()
-
-    else:
-        print("Running direct prompt...")
-
-    # # Clear the console
-    if platform.system() == "Windows":
-        os.system("cls")
-    else:
-        print("\033c", end="")
 
     if terminal_prompt:  # Skip objective prompt if it was given as an argument
         objective = terminal_prompt
