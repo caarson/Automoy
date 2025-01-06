@@ -49,15 +49,45 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     config.validation(model, voice_mode)
 
     if define_region:
+        import tkinter as tk
+        import threading
+        from operate.utils.area_selector import select_area, create_outline_window
+
         print("Region definition mode activated.")
-        from operate.utils.area_selector import select_area
-        
-        try:
-            region = select_area()
-            print(f"Selected region: {region}")
-        except Exception as e:
-            print(f"An error occurred: {e}")
-        # Continue with the main functionality after defining the region
+
+        # Create an event to signal when the selection is done
+        done_event = threading.Event()
+        region_coords = []  # Store selected coordinates
+
+        # GUI function to handle region selection and outline creation
+        def run_gui():
+            root = tk.Tk()  # Create the main Tkinter root
+            root.withdraw()  # Hide the main window
+
+            # Function to capture the selected coordinates
+            def handle_selection(coords):
+                nonlocal region_coords
+                region_coords[:] = coords  # Store the selected region
+                done_event.set()  # Signal that the selection is done
+                print(f"Selected region: {region_coords}")
+
+                # Create the outline window for the selected region
+                create_outline_window(region_coords, root)
+
+            # Run the region selection in the same GUI thread
+            select_area(handle_selection)
+
+            print("Region selection completed. Running main loop.")
+            root.mainloop()  # Keeps the GUI running until the close button is clicked
+
+        # Run the GUI thread for selection and outline creation
+        gui_thread = threading.Thread(target=run_gui, daemon=True)
+        gui_thread.start()
+
+        # Wait for the GUI thread to finish the region selection
+        done_event.wait()  # Blocks until the selection is completed
+
+        print("Region defined successfully; region border was closed")
 
     if voice_mode:
         try:
@@ -70,7 +100,6 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 "Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'"
             )
             sys.exit(1)
-
     if terminal_prompt:  # Skip objective prompt if it was given as an argument
         objective = terminal_prompt
     elif voice_mode:
@@ -122,6 +151,9 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}"
             )
             break
+
+    # Declare end of GUI
+    root.mainloop()
 
 
 import time
