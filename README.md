@@ -11,12 +11,12 @@ Automoy uses "Computer Vision" meaning that it is analyzing the pictures it is s
 Automoy is build for computer use now, but will later branch out in robotics as the API becomes more refined and as we improve on Computer Vision. Eventually, we imagine real-time analysis of frames, allowing for seamless interaction.
 
 ## What are the prerequisites?
-
 Automoy will require a GPU with atleast 2GB of VRAM - this is in addition to ~ 4GB of free RAM on the system. Caching RAM will make it painfully slow, we recommend that you use a system with atleast 8GB of system RAM, 16GB being ideal.
 
 Automoy only uses CUDA, before use, the application will test the system to see if CUDA is properly configured and the corresponding PyTorch package is installed. If not, the program will not start.
 We are testing on CUDA 12.4, however, older versions of CUDA may be supported. This remains untested and we hope to get feedback.
 
+Automoy only can be deployed on Windows 10+ machines; though in theory you could run it on any computer with slight modifcations or cosmetic defects. We have not tested this and do not recommend it.
 _______________________________________________
 
 There are toolchains that allow for CUDA on AMD GPUs, see below:
