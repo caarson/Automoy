@@ -5,11 +5,17 @@ This version uses GPU to accelerate OCR and object recognition tasks.
 
 Automoy is built for Deepseek, Ollama, and GPT. We will not be supporting Claude and Gemini for the near future while this project remains in development.
 
+## How does Automoy function?
+Automoy uses "Computer Vision" a fancy word meaning that it is analyzing the pictures it is sent, extracting information, and taking sensible actions to complete an objective.
+
+Automoy is build for computer use now, but will later branch out in robotics as the API becomes more refined and as we improve on Computer Vision.
+
 ## What are the prerequisites?
 
 Automoy will require a GPU with atleast 2GB of VRAM - this is in addition to ~ 4GB of free RAM on the system. Caching RAM will make it painfully slow, we recommend that you use a system with atleast 8GB of system RAM, 16GB being ideal.
 
 Automoy only uses CUDA, before use, the application will test the system to see if CUDA is properly configured and the corresponding PyTorch package is installed. If not, the program will not start.
+We are testing on CUDA 12.4, however, older versions of CUDA may be supported. This remains untested and we hope to get feedback.
 
 _______________________________________________
 
