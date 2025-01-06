@@ -6,9 +6,9 @@ This version uses GPU to accelerate OCR and object recognition tasks.
 Automoy is built for Deepseek, Ollama, and GPT. We will not be supporting Claude and Gemini for the near future while this project remains in development.
 
 ## How does Automoy function?
-Automoy uses "Computer Vision" a fancy word meaning that it is analyzing the pictures it is sent, extracting information, and taking sensible actions to complete an objective.
+Automoy uses "Computer Vision" meaning that it is analyzing the pictures it is sent, extracting information, and taking sensible actions to complete an objective.
 
-Automoy is build for computer use now, but will later branch out in robotics as the API becomes more refined and as we improve on Computer Vision.
+Automoy is build for computer use now, but will later branch out in robotics as the API becomes more refined and as we improve on Computer Vision. Eventually, we imagine real-time analysis of frames, allowing for seamless interaction.
 
 ## What are the prerequisites?
 
