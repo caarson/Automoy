@@ -100,8 +100,10 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 "Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'"
             )
             sys.exit(1)
+
     if terminal_prompt:  # Skip objective prompt if it was given as an argument
         objective = terminal_prompt
+        
     elif voice_mode:
         print(
             f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RESET} Listening for your command... (speak now)"
