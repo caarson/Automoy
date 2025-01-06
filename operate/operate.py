@@ -53,41 +53,28 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
         import threading
         from operate.utils.area_selector import select_area, create_outline_window
 
-        print("Region definition mode activated.")
-
-        # Create an event to signal when the selection is done
         done_event = threading.Event()
-        region_coords = []  # Store selected coordinates
+        region_coords = []  # Store the selected region coordinates
 
-        # GUI function to handle region selection and outline creation
         def run_gui():
-            root = tk.Tk()  # Create the main Tkinter root
-            root.withdraw()  # Hide the main window
+            root = tk.Tk()
+            root.withdraw()
 
-            # Function to capture the selected coordinates
             def handle_selection(coords):
                 nonlocal region_coords
-                region_coords[:] = coords  # Store the selected region
-                done_event.set()  # Signal that the selection is done
+                region_coords[:] = coords
+                done_event.set()
                 print(f"Selected region: {region_coords}")
-
-                # Create the outline window for the selected region
                 create_outline_window(region_coords, root)
 
-            # Run the region selection in the same GUI thread
             select_area(handle_selection)
+            root.mainloop()
 
-            print("Region selection completed. Running main loop.")
-            root.mainloop()  # Keeps the GUI running until the close button is clicked
-
-        # Run the GUI thread for selection and outline creation
         gui_thread = threading.Thread(target=run_gui, daemon=True)
         gui_thread.start()
 
-        # Wait for the GUI thread to finish the region selection
-        done_event.wait()  # Blocks until the selection is completed
-
-        print("Region defined successfully; region border was closed")
+        done_event.wait()  # Wait for region selection
+        print(f"Operating within region: {region_coords}")
 
     if voice_mode:
         try:
@@ -103,7 +90,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
     if terminal_prompt:  # Skip objective prompt if it was given as an argument
         objective = terminal_prompt
-        
+
     elif voice_mode:
         print(
             f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RESET} Listening for your command... (speak now)"
@@ -136,7 +123,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 get_next_action(model, messages, objective, session_id)
             )
 
-            stop = operate(operations, model)
+            stop = operate(operations, model, region=region_coords)
             if stop:
                 break
 
@@ -170,6 +157,7 @@ def operate(operations, model, region=None):
     if config.verbose:
         print("[Self Operating Computer][operate] Starting operations")
 
+    # Now with smart operations within regions.
     for operation in operations:
         if config.verbose:
             print("[Self Operating Computer][operate] Processing operation", operation)
@@ -192,16 +180,34 @@ def operate(operations, model, region=None):
         if operate_type == "press" or operate_type == "hotkey":
             keys = operation.get("keys")
             operate_detail = f"keys: {keys}"
+            # Press/hotkey operations don’t have coordinates, so they can always run.
             operating_system.press(keys)
         elif operate_type == "write":
             content = operation.get("content")
             operate_detail = f"content: '{content}'"
-            operating_system.write(content)
+            
+            # Writing might require cursor positioning – ensure it's inside the region.
+            x = operation.get("x", 0)  # Assume default position if not specified
+            y = operation.get("y", 0)
+            
+            if not region or is_within_region(x, y, region):
+                # Get current cursor position to ensure it starts within the region
+                current_x, current_y = pyautogui.position()
+                if is_within_region(current_x, current_y, region):
+                    operating_system.write(content)
+                else:
+                    print(f"Write operation aborted because the cursor is outside the region ({current_x}, {current_y}).")
+            else:
+                print(f"Write action at ({x}, {y}) skipped (out of bounds).")
         elif operate_type == "click":
             x = operation.get("x")
             y = operation.get("y")
             operate_detail = f"click at ({x}, {y})"
-            operating_system.mouse(x, y)
+            # Check if the click is within the defined region
+            if not region or is_within_region(x, y, region):
+                operating_system.mouse({"x": x, "y": y})
+            else:
+                print(f"Click at ({x}, {y}) skipped (out of bounds).")
         elif operate_type == "done":
             summary = operation.get("summary")
             print(f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")
