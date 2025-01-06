@@ -1,3 +1,4 @@
+![Automation Platform Logo](https://cloud.innovatingsustainabletechnology.com/apps/files_sharing/publicpreview/sDXKHHGoZH9K6mg?file=/&fileId=293&x=3840&y=2160&a=true&etag=36edfb75858ba0d548ba31d3309512f9)
 ## What is Automoy?
 The project is originally derived from Self-Operating Computer by OthersideAI (https://github.com/OthersideAI/self-operating-computer) - Automoy extends on this API and makes deploying an autonomous agent easy. 
 
