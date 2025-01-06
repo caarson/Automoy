@@ -12,7 +12,7 @@ _______________________________________________
 
 There are toolchains that allow for CUDA on AMD GPUs, see below:
 
-SCALE Toolkit
+SCALE Toolkit:
 https://wccftech.com/nvidia-cuda-directly-run-on-amd-gpus-using-scale-toolkit/#:~:text=AnnouncementHardware-,NVIDIA%20CUDA%20Can%20Now%20Directly%20Run,GPUs%20Using%20The%20%E2%80%9CSCALE%E2%80%9D%20Toolkit&text=British%20startup%20Spectral%20Compute%20has,function%20seamlessly%20on%20AMD's%20GPUs.
 
 ZLUDA Toolkit:
