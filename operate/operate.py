@@ -42,12 +42,25 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     None
     """
 
+    # Check whether or not CUDA is enabled
+    from CheckCUDA.check_cuda import check_cuda
+
+    cuda_avaliable = check_cuda()
+
+    if cuda_avaliable:
+        print("CUDA enabled, proceeding with startup...")
+    else:
+        print("CUDA is either not installed or improperly configured or installed.\nExiting...")
+        exit()
+
     mic = None
     # Initialize `WhisperMic`, if `voice_mode` is True
 
     config.verbose = verbose_mode
     config.validation(model, voice_mode)
 
+    ## Boot Arguments:
+    # Enable define a region boot arg
     if define_region:
         import tkinter as tk
         import threading
@@ -75,7 +88,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
         done_event.wait()  # Wait for region selection
         print(f"Operating within region: {region_coords}")
-
+    # Enable voice control
     if voice_mode:
         try:
             from whisper_mic import WhisperMic
@@ -87,7 +100,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 "Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'"
             )
             sys.exit(1)
-
+    # Enable pass-through prompt
     if terminal_prompt:  # Skip objective prompt if it was given as an argument
         objective = terminal_prompt
 
@@ -140,9 +153,6 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}"
             )
             break
-
-    # Declare end of GUI
-    root.mainloop()
 
 
 import time
