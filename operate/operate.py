@@ -43,7 +43,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     """
 
     # Check whether or not CUDA is enabled
-    from CheckCUDA.check_cuda import check_cuda
+    from operate.utils.check_cuda import check_cuda
 
     cuda_avaliable = check_cuda()
 
