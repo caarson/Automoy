@@ -1,5 +1,6 @@
-Integrate CheckCUDA into program and make sure it takes advantage of object and text recongization that is accelerated by CUDA
+Integrate CheckCUDA into program and make sure it takes advantage of object and text recongization that is accelerated by CUDA - Done
 Make a selected work area on the display and isolate screenshots to this area. - Done
 KeyBoard shortcut to stop actions and add more to the prompt.
 Optional screen and keyboard locking while deployed 
 Multiple agents and thinking before actionable steps are generated, actionable steps are also refined with agents.
+YOLO object recongization.

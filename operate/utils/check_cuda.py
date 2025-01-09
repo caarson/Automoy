@@ -65,9 +65,7 @@ def check_cuda(min_memory_gb=2):
 
         # Load YOLO model and force it to run on GPU
         model_path = os.path.abspath(os.path.join(__file__, "../../data/YOLO/test_models/yolov8n.pt"))
-
         yolo_model = YOLO(model_path).to("cuda")
-
         test_image_path = os.path.join(os.path.dirname(os.getcwd()), "data", "YOLO", "test_image", "image.jpeg")
 
         # Ensure the image file exists
