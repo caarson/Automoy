@@ -40,7 +40,7 @@ def select_area(callback):
 
     overlay.mainloop()  # Main GUI loop for selection
 
-def create_outline_window(coords, root):
+def create_outline_window(coords):
     """
     Creates an outline window at the specified coordinates.
     """
@@ -63,15 +63,15 @@ def create_outline_window(coords, root):
 
     def close_outline():
         """
-        Closes the outline window and quits the main loop.
+        Closes the outline window.
         """
         print("Closing the outline window...")
         outline_canvas.itemconfig(outline_rect, state='hidden')
         close_btn.place_forget()  # Hide the button
         outline_window.destroy()  # Close the outline window
         print("Outline window closed.")
-        # <--- Add this line:
         root.quit()  # Tells Tk to stop the main event loop immediately!
+        
 
     close_btn = tk.Button(outline_window, text="Close", command=close_outline, bg='white', relief='flat')
     close_btn.place(relx=0.5, rely=0.5, anchor='center')
@@ -101,9 +101,9 @@ if __name__ == "__main__":
 
     def handle_selection(coords):
         print(f"Selected region coordinates: {coords}")
-        toggle_visibility = create_outline_window(coords, root)
+        toggle_visibility = create_outline_window(coords)
         print("Visibility test: hiding outline for a second after 3 seconds.")
-        toggle_visibility()
+        toggle_visibility()  # Toggle visibility for testing
 
     root = tk.Tk()
     root.withdraw()  # Hide the main window
