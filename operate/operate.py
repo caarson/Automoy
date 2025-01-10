@@ -22,7 +22,7 @@ from operate.utils.style import (
     style,
 )
 from operate.utils.operating_system import OperatingSystem
-from operate.utils.apis import get_next_action
+from operate.model_handlers.handlers_apis import get_next_action
 
 # Load configuration
 config = Config()

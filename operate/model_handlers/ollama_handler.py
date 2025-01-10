@@ -1,13 +1,20 @@
 import ollama
 
-class OllamaHandler:
-    def call_ollama_llava(self, messages):
-        """
-        Calls Ollama LLaVA model and returns the response.
-        """
-        try:
-            response = ollama.chat(model="llava", messages=messages)
-            return response["message"]["content"].strip()
-        except ollama.ResponseError as e:
-            print(f"Ollama Error: {e}")
-            return "Ollama service error."
+def call_ollama_model(messages, objective, model_name="llama2"):
+    """
+    Calls the specified Ollama model (LLaMA family).
+    Args:
+        messages (list): Contextual conversation messages.
+        objective (str): Task objective.
+        model_name (str): The Ollama model to use.
+    """
+    try:
+        response = ollama.chat(
+            model=model_name,
+            messages=messages,
+        )
+        content = response["message"]["content"].strip()
+        return content
+    except Exception as e:
+        print(f"Error calling Ollama model {model_name}: {e}")
+        return None
