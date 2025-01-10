@@ -15,7 +15,7 @@ from operate.exceptions import ModelNotRecognizedException
 from operate.utils.screenshot import (
     capture_screen_with_cursor,
 )
-from operate.prompts import (
+from operate.utils.prompts import (
     get_user_first_message_prompt,
     get_user_prompt,
     get_system_prompt,

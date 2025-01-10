@@ -7,7 +7,7 @@ from openai import OpenAI
 from PIL import Image
 from operate.config import Config
 from operate.utils.screenshot import capture_screen_with_cursor
-from operate.prompts import get_user_prompt, get_user_first_message_prompt
+from operate.utils.prompts import get_user_prompt, get_user_first_message_prompt
 
 # Load configuration
 config = Config()

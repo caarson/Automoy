@@ -7,7 +7,7 @@ from operate.exceptions import ModelNotRecognizedException
 import platform
 
 # from operate.models.prompts import USER_QUESTION, get_system_prompt
-from operate.prompts import (
+from operate.utils.prompts import (
     USER_QUESTION,
     get_system_prompt,
 )
@@ -22,7 +22,7 @@ from operate.utils.style import (
     style,
 )
 from operate.utils.operating_system import OperatingSystem
-from operate.apis import get_next_action
+from operate.utils.apis import get_next_action
 
 # Load configuration
 config = Config()
