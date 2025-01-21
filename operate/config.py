@@ -2,9 +2,9 @@ import os
 import sys
 from dotenv import load_dotenv
 from openai import OpenAI
-import anthropic
 from prompt_toolkit.shortcuts import input_dialog
-import google.generativeai as genai
+import requests  # For testing Ollama API
+import subprocess
 
 
 class Config:
@@ -14,7 +14,6 @@ class Config:
     Attributes:
         verbose (bool): Flag indicating whether verbose mode is enabled.
         openai_api_key (str): API key for OpenAI.
-        google_api_key (str): API key for Google.
     """
 
     _instance = None
@@ -22,23 +21,22 @@ class Config:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(Config, cls).__new__(cls)
-            # Put any initialization here
         return cls._instance
 
     def __init__(self):
-        load_dotenv()
+        load_dotenv()  # Load environment variables from .env
         self.verbose = False
-        self.openai_api_key = (
-            None  # instance variables are backups in case saving to a `.env` fails
-        )
-        self.google_api_key = (
-            None  # instance variables are backups in case saving to a `.env` fails
-        )
-        self.anthropic_api_key = (
-            None  # instance variables are backups in case saving to a `.env` fails
-        )
+        self.openai_api_key = None  # Backup if .env is not set
+        self.deepseek_api_key = None  # Placeholder for DeepSeek if needed
+        self.ollama_url = "http://localhost:11434/api/generate"  # Ollama's default local API URL
 
+    # ---------------------
+    # OpenAI Initialization
+    # ---------------------
     def initialize_openai(self):
+        """
+        Initializes OpenAI client with API key.
+        """
         if self.verbose:
             print("[Config][initialize_openai]")
 
@@ -47,69 +45,83 @@ class Config:
                 print("[Config][initialize_openai] using cached openai_api_key")
             api_key = self.openai_api_key
         else:
-            if self.verbose:
-                print(
-                    "[Config][initialize_openai] no cached openai_api_key, try to get from env."
-                )
             api_key = os.getenv("OPENAI_API_KEY")
 
-        client = OpenAI(
-            api_key=api_key,
-        )
+        if not api_key:
+            self.prompt_and_save_api_key("OPENAI_API_KEY", "OpenAI API key")
+            api_key = self.openai_api_key
+
+        client = OpenAI(api_key=api_key)
         client.api_key = api_key
-        client.base_url = os.getenv("OPENAI_API_BASE_URL", client.base_url)
         return client
 
-    def initialize_google(self):
-        if self.google_api_key:
-            if self.verbose:
-                print("[Config][initialize_google] using cached google_api_key")
-            api_key = self.google_api_key
-        else:
-            if self.verbose:
-                print(
-                    "[Config][initialize_google] no cached google_api_key, try to get from env."
-                )
-            api_key = os.getenv("GOOGLE_API_KEY")
-        genai.configure(api_key=api_key, transport="rest")
-        model = genai.GenerativeModel("gemini-pro-vision")
-
-        return model
-
-    def initialize_anthropic(self):
-        if self.anthropic_api_key:
-            api_key = self.anthropic_api_key
-        else:
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-        return anthropic.Anthropic(api_key=api_key)
-
-    def validation(self, model, voice_mode):
+    # ---------------------
+    # Ollama Initialization
+    # ---------------------
+    def initialize_ollama(self):
         """
-        Validate the input parameters for the dialog operation.
+        Initializes Ollama by checking if the local API is running.
         """
-        self.require_api_key(
-            "OPENAI_API_KEY",
-            "OpenAI API key",
-            model == "gpt-4"
-            or voice_mode
-            or model == "gpt-4-with-som"
-            or model == "gpt-4-with-ocr"
-            or model == "o1-with-ocr",
-        )
-        self.require_api_key(
-            "GOOGLE_API_KEY", "Google API key", model == "gemini-pro-vision"
-        )
-        self.require_api_key(
-            "ANTHROPIC_API_KEY", "Anthropic API key", model == "claude-3"
-        )
+        if self.verbose:
+            print("[Config][initialize_ollama] Checking Ollama server...")
+
+        try:
+            response = requests.get(self.ollama_url.replace("/generate", "/info"))
+            if response.status_code == 200:
+                if self.verbose:
+                    print("[Config][initialize_ollama] Ollama server is running.")
+                return True
+            else:
+                print("[Config][initialize_ollama] Ollama server did not respond.")
+                return False
+        except requests.ConnectionError:
+            print("[Config][initialize_ollama] Ollama is not running. Attempting to start Ollama...")
+            self.start_ollama_server()
+
+    def start_ollama_server(self):
+        """
+        Starts the Ollama local API server if it is not running.
+        """
+        try:
+            subprocess.Popen(["ollama", "serve"])
+            print("[Config][start_ollama_server] Ollama server started.")
+        except FileNotFoundError:
+            sys.exit("Ollama CLI not found. Please install Ollama: https://ollama.com")
+
+    # ---------------------
+    # DeepSeek Initialization (if required)
+    # ---------------------
+    def initialize_deepseek(self):
+        """
+        Placeholder for DeepSeek API key or any initialization steps.
+        """
+        if self.verbose:
+            print("[Config][initialize_deepseek] Checking DeepSeek API setup.")
+
+        # Optionally require an API key for DeepSeek if needed
+        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
+        if not self.deepseek_api_key:
+            print("[Config] DeepSeek does not require an API key or it’s not set.")
+            # If DeepSeek requires a server to run, add server initialization here.
+
+    # ---------------------
+    # API Key Management
+    # ---------------------
+    def validation(self, model):
+        """
+        Validate the input parameters for the dialog operation, ensuring API key presence.
+        """
+        if model.startswith("gpt") or model.startswith("openai"):
+            self.require_api_key("OPENAI_API_KEY", "OpenAI API key", True)
+        elif model == "deepseek":
+            print("[Config] No DeepSeek API key validation needed.")
+        elif model.startswith("ollama"):
+            self.initialize_ollama()
 
     def require_api_key(self, key_name, key_description, is_required):
         key_exists = bool(os.environ.get(key_name))
         if self.verbose:
-            print("[Config] require_api_key")
-            print("[Config] key_name", key_name)
-            print("[Config] key_description", key_description)
-            print("[Config] key_exists", key_exists)
+            print(f"[Config] require_api_key for {key_name}: {key_exists}")
         if is_required and not key_exists:
             self.prompt_and_save_api_key(key_name, key_description)
 
@@ -118,19 +130,16 @@ class Config:
             title="API Key Required", text=f"Please enter your {key_description}:"
         ).run()
 
-        if key_value is None:  # User pressed cancel or closed the dialog
+        if key_value is None:
             sys.exit("Operation cancelled by user.")
 
         if key_value:
             if key_name == "OPENAI_API_KEY":
                 self.openai_api_key = key_value
-            elif key_name == "GOOGLE_API_KEY":
-                self.google_api_key = key_value
-            elif key_name == "ANTHROPIC_API_KEY":
-                self.anthropic_api_key = key_value
+            elif key_name == "DEEPSEEK_API_KEY":
+                self.deepseek_api_key = key_value
             self.save_api_key_to_env(key_name, key_value)
             load_dotenv()  # Reload environment variables
-            # Update the instance attribute with the new key
 
     @staticmethod
     def save_api_key_to_env(key_name, key_value):
