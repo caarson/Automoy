@@ -1,19 +1,21 @@
-from operate.model_handlers.openai_handler import call_openai_model
-from operate.model_handlers.ollama_handler import call_ollama_model
-from operate.model_handlers.deepseek_handler import call_deepseek_model
-from operate.exceptions import ModelNotRecognizedException
+from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
+from ollama_handler import call_ollama_model
+from openai_handler import call_openai_model
+from deepseek_handler import call_deepseek_model
 
 async def get_next_action(model, messages, objective, session_id):
-    """
-    Main entry point for requesting the next action from a given model.
-    Args:
-        model (str): The model to use (e.g., "gpt-4", "ollama-llama2", "deepseek").
-        messages (list): The list of messages for context.
-        objective (str): The task objective.
-        session_id (str): A unique session identifier.
-    """
     print(f"[handlers_api] Using model: {model}")
 
+    # Perform preprocessing with OCR and YOLO
+    combined_results = await preprocess_with_ocr_and_yolo()
+
+    # Add preprocessing results to messages
+    messages.append({
+        "role": "system",
+        "content": f"Preprocessed data with OCR and YOLO: {combined_results}"
+    })
+
+    # Route to the appropriate model handler
     if model.startswith("gpt") or "openai" in model:
         return await call_openai_model(messages, objective, model), None
 

@@ -299,17 +299,8 @@ def get_system_prompt(model, objective):
         os_search_str = ["win"]
         operating_system = "Linux"
 
-    # Choose the appropriate base prompt
-    if model == "gpt-4-with-som":
-        # We use the labeled bounding-box prompt
-        prompt = SYSTEM_PROMPT_LABELED.format(
-            objective=objective,
-            cmd_string=cmd_string,
-            os_search_str=os_search_str,
-            operating_system=operating_system,
-        )
-    elif model == "gpt-4-with-ocr" or model == "o1-with-ocr" or model == "claude-3":
-        # We use the OCR-based prompt
+    if model == "gpt-4-with-ocr-and-yolo":
+        # Use a custom prompt for the combined OCR and YOLO functionality
         prompt = SYSTEM_PROMPT_OCR.format(
             objective=objective,
             cmd_string=cmd_string,

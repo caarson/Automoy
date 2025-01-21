@@ -3,28 +3,29 @@ from ultralytics import YOLO
 import pyautogui
 import os
 
-# Load configuration
-weights_path = os.path.join("models", "weights", "best.pt")
+# Configuration
+weights_path = os.path.join("data", "YOLO", "models", "socYOLO.pt")  # Updated to use socYOLO.pt
 screen_width, screen_height = pyautogui.size()
 
 class YOLODetector:
-    def __init__(self):
+    def __init__(self, weights=weights_path, device="cuda"):
         """
         Initializes the YOLO detector and loads the model.
+        Args:
+            weights (str): Path to the YOLO model weights file.
+            device (str): The device to run YOLO on ("cuda" or "cpu").
         """
         print("Initializing YOLO detector...")
-        from operate.utils.check_cuda import check_cuda
-        cuda_available = check_cuda()
-        device = "cuda" if cuda_available else "cpu"
 
         # Load YOLO model and set device
-        self.model = YOLO(weights_path)
-        self.model.to(device)
-
-        if cuda_available:
-            print(f"CUDA enabled. Running on GPU: {torch.cuda.get_device_name(0)}")
-        else:
-            print("CUDA not available. Running on CPU.")
+        try:
+            self.model = YOLO(weights)
+            self.model.to(device)
+            self.device = device
+            print(f"YOLO model loaded with weights: {weights}")
+            print(f"Running YOLO on device: {device}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load YOLO model: {e}")
 
     def detect_objects(self, image_path):
         """
@@ -35,36 +36,53 @@ class YOLODetector:
             list: List of detected objects in the format:
                 [{'label': 'button', 'confidence': 0.9, 'x': 0.5, 'y': 0.4}]
         """
-        results = self.model(image_path)
-        detected_objects = []
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image not found at: {image_path}")
 
-        for result in results:
-            for box in result.boxes.data.tolist():
-                x1, y1, x2, y2, confidence, class_id = box
-                label = self.model.names[int(class_id)]
+        try:
+            results = self.model(image_path)
+            detected_objects = []
 
-                # Convert YOLO bounding box to central point (percent of screen size)
-                x_center = (x1 + x2) / 2
-                y_center = (y1 + y2) / 2
-                x_percent = round(x_center / screen_width, 3)
-                y_percent = round(y_center / screen_height, 3)
+            for result in results:
+                for box in result.boxes.data.tolist():
+                    x1, y1, x2, y2, confidence, class_id = box
+                    label = self.model.names[int(class_id)]
 
-                detected_objects.append({
-                    "label": label,
-                    "confidence": round(confidence, 2),
-                    "x": x_percent,
-                    "y": y_percent
-                })
+                    # Convert YOLO bounding box to central point (percent of screen size)
+                    x_center = (x1 + x2) / 2
+                    y_center = (y1 + y2) / 2
+                    x_percent = round(x_center / screen_width, 3)
+                    y_percent = round(y_center / screen_height, 3)
 
-        return detected_objects
+                    detected_objects.append({
+                        "label": label,
+                        "confidence": round(confidence, 2),
+                        "x": x_percent,
+                        "y": y_percent
+                    })
+
+            return detected_objects
+        except Exception as e:
+            raise RuntimeError(f"Error during YOLO detection: {e}")
 
 # Test example
 if __name__ == "__main__":
-    yolo_detector = YOLODetector()
-    test_image = "screenshots/screenshot.png"  # Ensure this path exists
-    detections = yolo_detector.detect_objects(test_image)
+    import sys
 
-    # Print all detected objects
-    print("Detected objects:")
-    for obj in detections:
-        print(f"Label: {obj['label']}, Confidence: {obj['confidence']}, Coordinates: ({obj['x']}, {obj['y']})")
+    # Set up paths and testing variables
+    test_image = "screenshots/screenshot.png"  # Ensure this path exists
+    if not os.path.exists(test_image):
+        print(f"Test image not found at {test_image}. Please provide a valid image.")
+        sys.exit(1)
+
+    # Initialize YOLO detector
+    try:
+        yolo_detector = YOLODetector()
+        detections = yolo_detector.detect_objects(test_image)
+
+        # Print all detected objects
+        print("Detected objects:")
+        for obj in detections:
+            print(f"Label: {obj['label']}, Confidence: {obj['confidence']}, Coordinates: ({obj['x']}, {obj['y']})")
+    except Exception as e:
+        print(f"Error: {e}")
