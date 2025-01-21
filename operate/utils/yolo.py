@@ -4,7 +4,7 @@ import pyautogui
 import os
 
 # Configuration
-weights_path = os.path.join("data", "YOLO", "models", "socYOLO.pt")  # Updated to use socYOLO.pt
+weights_path = os.path.join(os.path.dirname(__file__), "..", "data", "YOLO", "models", "socYOLO.pt")
 screen_width, screen_height = pyautogui.size()
 
 class YOLODetector:
@@ -70,7 +70,8 @@ if __name__ == "__main__":
     import sys
 
     # Set up paths and testing variables
-    test_image = "screenshots/screenshot.png"  # Ensure this path exists
+    test_image = os.path.join(os.path.dirname(__file__), "..", "..", "screenshots", "screenshot.png")
+
     if not os.path.exists(test_image):
         print(f"Test image not found at {test_image}. Please provide a valid image.")
         sys.exit(1)
