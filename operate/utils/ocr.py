@@ -2,10 +2,18 @@ from operate.config import Config
 from PIL import Image, ImageDraw
 import os
 from datetime import datetime
+import easyocr
 
 # Load configuration
 config = Config()
 
+# Dynamic path setup
+BASE_DIR = os.path.dirname(__file__)
+OCR_DIR = os.path.join(BASE_DIR, "..", "ocr")
+SCREENSHOT_PATH = os.path.join(BASE_DIR, "..", "..", "screenshots", "screenshot.png")
+
+if not os.path.exists(OCR_DIR):
+    os.makedirs(OCR_DIR)
 
 def get_text_element(result, search_text, image_path):
     """
@@ -22,16 +30,11 @@ def get_text_element(result, search_text, image_path):
         Exception: If the text element is not found in the results.
     """
     if config.verbose:
-        print("[get_text_element]")
-        print("[get_text_element] search_text", search_text)
-        # Create /ocr directory if it doesn't exist
-        ocr_dir = "ocr"
-        if not os.path.exists(ocr_dir):
-            os.makedirs(ocr_dir)
+        print("[get_text_element] Searching for:", search_text)
 
-        # Open the original image
-        image = Image.open(image_path)
-        draw = ImageDraw.Draw(image)
+    # Open the original image
+    image = Image.open(image_path)
+    draw = ImageDraw.Draw(image)
 
     found_index = None
     for index, element in enumerate(result):
@@ -39,24 +42,25 @@ def get_text_element(result, search_text, image_path):
         box = element[0]
 
         if config.verbose:
-            # Draw bounding box in blue
+            # Draw bounding box in blue for all elements
             draw.polygon([tuple(point) for point in box], outline="blue")
 
-        if search_text in text:
+        if search_text.lower() in text.lower():  # Case-insensitive match
             found_index = index
             if config.verbose:
-                print("[get_text_element][loop] found search_text, index:", index)
+                print(f"[get_text_element] Found '{search_text}' at index {index}")
 
     if found_index is not None:
         if config.verbose:
             # Draw bounding box of the found text in red
             box = result[found_index][0]
             draw.polygon([tuple(point) for point in box], outline="red")
+
             # Save the image with bounding boxes
             datetime_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-            ocr_image_path = os.path.join(ocr_dir, f"ocr_image_{datetime_str}.png")
+            ocr_image_path = os.path.join(OCR_DIR, f"ocr_image_{datetime_str}.png")
             image.save(ocr_image_path)
-            print("[get_text_element] OCR image saved at:", ocr_image_path)
+            print(f"[get_text_element] OCR image saved at: {ocr_image_path}")
 
         return found_index
 
@@ -98,3 +102,26 @@ def get_text_coordinates(result, index, image_path):
     percent_y = round((center_y / height), 3)
 
     return {"x": percent_x, "y": percent_y}
+
+
+# Test example
+if __name__ == "__main__":
+    # Initialize OCR reader
+    reader = easyocr.Reader(["en"])
+
+    if not os.path.exists(SCREENSHOT_PATH):
+        print(f"Screenshot not found at {SCREENSHOT_PATH}. Please provide a valid image.")
+    else:
+        try:
+            # Perform OCR
+            print(f"Performing OCR on: {SCREENSHOT_PATH}")
+            ocr_results = reader.readtext(SCREENSHOT_PATH)
+
+            # Example: Search for specific text
+            search_text = "example text"  # Replace with the text you want to search for
+            text_index = get_text_element(ocr_results, search_text, SCREENSHOT_PATH)
+            coordinates = get_text_coordinates(ocr_results, text_index, SCREENSHOT_PATH)
+
+            print(f"Text '{search_text}' found at coordinates: {coordinates}")
+        except Exception as e:
+            print(f"Error: {e}")
