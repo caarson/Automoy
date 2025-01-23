@@ -206,21 +206,51 @@ def get_gpu_memory_usage():
         return 0, 0, 0
 
 # -----------------------------
-# Initialize DETECTION (docTR)
+# Device Initialization (MUST COME FIRST)
 # -----------------------------
-det_model = detection.db_resnet50(pretrained=True).eval()
+device = torch.device("cuda")
+print(f"[INFO] Using device: {device}")
+
+# -----------------------------
+# Initialize DETECTION (docTR) - FIXED PRECISION
+# -----------------------------
+try:
+    # Load detection model with full precision
+    det_model = detection.db_resnet50(pretrained=True)
+    det_model = det_model.eval().to(device)
+    print("[SUCCESS] Detection model loaded in FP32")
+except Exception as e:
+    print(f"[ERROR] Failed to initialize detection model: {e}")
+    raise
 
 # -----------------------------
 # Initialize RECOGNITION (TrOCR)
 # -----------------------------
-trocr_name = "microsoft/trocr-base-stage1"
-processor = TrOCRProcessor.from_pretrained(trocr_name)
-trocr_model = VisionEncoderDecoderModel.from_pretrained(trocr_name).eval()
+try:
+    # Load processor with fast tokenizer
+    trocr_name = "microsoft/trocr-base-stage1"
+    processor = TrOCRProcessor.from_pretrained(trocr_name, use_fast=True)
+    
+    # Load model with mixed precision
+    trocr_model = VisionEncoderDecoderModel.from_pretrained(
+        trocr_name,
+        torch_dtype=torch.float16
+    ).eval().to(device)
+    
+    # Warmup GPU with dummy inference using correct input size
+    with torch.no_grad(), torch.cuda.amp.autocast():
+        dummy_input = torch.randn(1, 3, 384, 384, device=device, dtype=torch.float16)  # Changed to 384x384
+        _ = trocr_model.generate(dummy_input, max_length=10)
+    
+    print("[SUCCESS] Recognition model loaded and warmed up on GPU")
 
-# Move models to GPU (if available)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-det_model = det_model.to(device)
-trocr_model = trocr_model.to(device)
+except Exception as e:
+    print(f"[ERROR] Failed to initialize recognition model: {e}")
+    raise
+
+# Ensure models are in eval mode
+det_model.eval()
+trocr_model.eval()
 
 # -----------------------------
 # Memory Management Functions
@@ -323,16 +353,14 @@ def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale
 
     raise RuntimeError("Cannot process image within memory constraints even at minimum scale.")
 
-def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, initial_chunk_size=8, min_chunk_size=1):
+# In the adaptive_chunking function definition, add max_chunk_size parameter
+def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, 
+                      initial_chunk_size=8,  # Reduced from 16
+                      max_chunk_size=32,     # Reduced from 64
+                      min_chunk_size=1):
     """
     Dynamically process tensors in chunks while maximizing GPU memory utilization.
-
-    :param tensors: A batch tensor on the GPU.
-    :param model_or_generate_fn: Either a model.forward or model.generate function.
-    :param memory_limit: Available GPU memory in bytes.
-    :param initial_chunk_size: Initial chunk size for processing.
-    :param min_chunk_size: Minimum allowable chunk size.
-    :return: Concatenated results from processing each chunk.
+    Added max_chunk_size to prevent oversized batches during generation.
     """
     results = []
     i = 0
@@ -341,44 +369,35 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, initial_chunk
     print(f"[INFO] Total number of tensors: {total}")
 
     while i < total:
-        current_chunk_size = min(chunk_size, total - i)
+        # Enforce maximum chunk size
+        current_chunk_size = min(chunk_size, total - i, max_chunk_size)
         chunk = tensors[i:i + current_chunk_size].to(device)
-        print(f"[DEBUG] Processing chunk {i // chunk_size + 1} with size {current_chunk_size}...")
+        print(f"[DEBUG] Processing chunk {i // current_chunk_size + 1} with size {current_chunk_size}...")
 
         try:
-            # Retrieve GPU memory usage
-            used_memory_gb, free_memory_gb, total_memory_gb = get_gpu_memory_usage()
-            print(f"[INFO] GPU Memory Used: {used_memory_gb:.2f} GB, Free: {free_memory_gb:.2f} GB")
+            # Conservative memory estimation with generation overhead factor
+            element_size = chunk.element_size()
+            estimated_mem_per_element = chunk[0].nelement() * element_size * 10  # 10x conservative multiplier
+            safe_batch_size = int((memory_limit * 0.8) // estimated_mem_per_element)
+            current_chunk_size = min(current_chunk_size, safe_batch_size, max_chunk_size)
+            
+            if current_chunk_size < 1:
+                raise RuntimeError("Memory requirements exceed available GPU memory")
 
-            # Estimate memory required for the current chunk
-            memory_required_gb = chunk.nelement() * chunk.element_size() / (1024 ** 3)
+            chunk = tensors[i:i + current_chunk_size].to(device)
 
-            if free_memory_gb > memory_required_gb + 1.0:  # Leave 1 GB buffer
-                # Calculate maximum chunk size based on free memory
-                max_tensors_in_memory = int((free_memory_gb - 1.0) * (1024 ** 3) / (chunk.nelement() * chunk.element_size()))
-                new_chunk_size = max(min(max_tensors_in_memory, total - i), min_chunk_size)
-                if new_chunk_size > chunk_size:
-                    print(f"[INFO] Increasing chunk size to {new_chunk_size}")
-                    chunk_size = new_chunk_size
-            elif free_memory_gb < memory_required_gb + 0.5 and chunk_size > min_chunk_size:
-                print("[WARNING] Low GPU memory. Reducing chunk size.")
-                chunk_size = max(min_chunk_size, chunk_size // 2)
-                continue
-
-            # Perform GPU operations
-            with torch.cuda.amp.autocast(dtype=torch.float16):  # Mixed precision
+            # Perform GPU operations with optimized generation parameters
+            with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.float16):
                 output = model_or_generate_fn(chunk)
-                torch.cuda.synchronize()  # Ensure GPU operations complete
+                torch.cuda.synchronize()
 
-            # Collect results
-            if isinstance(output, torch.Tensor):
-                results.append(output)
-            elif isinstance(output, list):
-                results.extend(output)
-            else:
-                raise TypeError("Unsupported output type from the model.")
-
-            i += current_chunk_size  # Advance to the next chunk
+            # Collect results and adjust chunk size
+            results.append(output)
+            i += current_chunk_size
+            
+            # Dynamic chunk size adjustment
+            if chunk_size < max_chunk_size:
+                chunk_size = min(chunk_size * 2, max_chunk_size)
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
@@ -388,11 +407,7 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, initial_chunk
             else:
                 raise e
 
-    # Concatenate results on the GPU
-    if isinstance(results[0], torch.Tensor):
-        return torch.cat(results, dim=0)
-    else:
-        return results
+    return torch.cat(results, dim=0) if isinstance(results[0], torch.Tensor) else results
 
 def timeout_handler():
     raise TimeoutException("Recognition process exceeded time limit.")
@@ -428,8 +443,9 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
     for page_idx, page in enumerate(pages):
         print(f"[INFO] Processing page {page_idx + 1}/{len(pages)}")
 
-        # Move the page tensor to the GPU
-        page_tensor = torch.tensor(page).permute(2, 0, 1).float().to(device) / 255.0
+        # Convert to tensor and normalize properly
+        page_tensor = torch.tensor(page).permute(2, 0, 1).float().to(device)
+        page_tensor = page_tensor / 255.0  # Keep in float32
 
         # Dynamic scaling for detection
         try:
@@ -440,8 +456,11 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
             print(f"[ERROR] Failed to detect text on page {page_idx + 1}: {e}")
             continue
 
+        # ADD DEBUG LINES HERE ------------------
+        print(f"Raw detection output: {detection_dict}")  # Debug output
         preds = detection_dict["preds"][0] if len(detection_dict["preds"]) > 0 else None
-
+        # ---------------------------------------
+        
         if not preds or len(preds["words"]) == 0:
             print(f"[INFO] No text detected on page {page_idx + 1}")
             continue
@@ -451,14 +470,15 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
 
         # Crop and resize images for recognition
         for box_idx, (xmin, ymin, xmax, ymax, conf) in enumerate(preds["words"]):
-            if conf < 0.5:
+            if conf < 0.3:
                 continue
 
             abs_xmin, abs_ymin = xmin * full_width, ymin * full_height
             abs_xmax, abs_ymax = xmax * full_width, ymax * full_height
 
             crop = full_img.crop((abs_xmin, abs_ymin, abs_xmax, abs_ymax))
-            crop_resized = crop.resize((384, 384), Image.Resampling.LANCZOS)
+            # In perform_ocr() function, change crop size:
+            crop_resized = crop.resize((384, 384), Image.Resampling.LANCZOS)  # Was 256x256
             cropped_images.append(crop_resized)
 
             polygon = [
@@ -475,9 +495,15 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
             crop_tensors = processor(images=cropped_images, return_tensors="pt", padding=True).pixel_values.to(device)
 
             def generate_fn(batch):
-                with torch.no_grad():
-                    with torch.cuda.amp.autocast(dtype=torch.float16):  # Mixed precision
-                        return trocr_model.generate(batch, max_length=40)
+                return trocr_model.generate(
+                    batch,
+                    max_length=40,
+                    num_beams=1,
+                    early_stopping=True,
+                    pad_token_id=processor.tokenizer.pad_token_id,
+                    output_scores=True,
+                    return_dict_in_generate=True
+                ).sequences
 
             try:
                 texts = []
