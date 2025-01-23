@@ -50,7 +50,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
 
 def get_gpu_memory_task_manager():
     """
-    Retrieve GPU memory statistics for the NVIDIA GPU using WMI and fallback methods.
+    Retrieve GPU memory statistics for the NVIDIA GPU using WMI and dynamic shared memory query.
     """
     try:
         # Connect to WMI
@@ -72,8 +72,8 @@ def get_gpu_memory_task_manager():
                     # Fallback to nvidia-smi if WMI fails to retrieve AdapterRAM
                     dedicated_memory_gb = get_dedicated_memory_from_nvidia_smi()
 
-                # Shared memory estimate
-                shared_memory_gb = 16.0  # Task Manager dynamically allocates shared memory
+                # Retrieve free shared memory dynamically
+                shared_memory_gb = get_free_shared_memory()
 
                 # Print GPU details
                 print(f"Adapter: {adapter_name}")
@@ -91,6 +91,27 @@ def get_gpu_memory_task_manager():
     except Exception as e:
         print(f"Error retrieving GPU memory: {e}")
         return 0, 0
+
+def get_free_shared_memory():
+    """
+    Retrieve free shared memory dynamically using WMI.
+    """
+    try:
+        # Connect to WMI
+        w = wmi.WMI(namespace="root\\CIMV2")
+        os_info = w.query("SELECT FreePhysicalMemory FROM Win32_OperatingSystem")
+
+        if os_info and len(os_info) > 0:
+            free_physical_memory_kb = int(os_info[0].FreePhysicalMemory)
+            free_memory_gb = free_physical_memory_kb / (1024 ** 2)  # Convert KB to GB
+            return free_memory_gb
+
+        print("[WARNING] Unable to retrieve free shared memory.")
+        return 0
+
+    except Exception as e:
+        print(f"Error retrieving free shared memory: {e}")
+        return 0
 
 
 def get_dedicated_memory_from_nvidia_smi():
