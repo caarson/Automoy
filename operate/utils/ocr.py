@@ -353,14 +353,14 @@ def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale
 
     raise RuntimeError("Cannot process image within memory constraints even at minimum scale.")
 
-# In the adaptive_chunking function definition, add max_chunk_size parameter
-def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, 
-                      initial_chunk_size=8,  # Reduced from 16
-                      max_chunk_size=32,     # Reduced from 64
-                      min_chunk_size=1):
+# Update adaptive chunking parameters and logic
+def adaptive_chunking(tensors, model_or_generate_fn, memory_limit,
+                      initial_chunk_size=64,  # Start aggressively
+                      max_chunk_size=256,     # Much larger maximum size
+                      min_chunk_size=32,      # Higher minimum to maintain throughput
+                      scaling_factor=1.5):    # More conservative scaling
     """
-    Dynamically process tensors in chunks while maximizing GPU memory utilization.
-    Added max_chunk_size to prevent oversized batches during generation.
+    Ultra-aggressive chunking for maximum memory utilization
     """
     results = []
     i = 0
@@ -369,39 +369,37 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit,
     print(f"[INFO] Total number of tensors: {total}")
 
     while i < total:
-        # Enforce maximum chunk size
         current_chunk_size = min(chunk_size, total - i, max_chunk_size)
-        chunk = tensors[i:i + current_chunk_size].to(device)
-        print(f"[DEBUG] Processing chunk {i // current_chunk_size + 1} with size {current_chunk_size}...")
+        print(f"[OPTIM] Attempting chunk size {current_chunk_size}...")
 
         try:
-            # Conservative memory estimation with generation overhead factor
-            element_size = chunk.element_size()
-            estimated_mem_per_element = chunk[0].nelement() * element_size * 10  # 10x conservative multiplier
-            safe_batch_size = int((memory_limit * 0.8) // estimated_mem_per_element)
+            # Minimal memory estimation (2x multiplier)
+            element_size = tensors.element_size()
+            elements_per_item = tensors[0].numel()
+            estimated_mem_per_element = elements_per_item * element_size * 2  # 2x multiplier
+            safe_batch_size = int((memory_limit * 0.95) // estimated_mem_per_element)  # Use 95% of memory
             current_chunk_size = min(current_chunk_size, safe_batch_size, max_chunk_size)
             
-            if current_chunk_size < 1:
-                raise RuntimeError("Memory requirements exceed available GPU memory")
+            if current_chunk_size < min_chunk_size:
+                current_chunk_size = min_chunk_size  # Force minimum batch size
 
-            chunk = tensors[i:i + current_chunk_size].to(device)
+            chunk = tensors[i:i + current_chunk_size].to(device, non_blocking=True)  # Async transfer
+            print(f"[OPTIM] Processing chunk {i//current_chunk_size + 1} ({current_chunk_size} items)")
 
-            # Perform GPU operations with optimized generation parameters
-            with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.float16):
+            # Optimized generation parameters
+            with torch.inference_mode(), torch.amp.autocast(device_type='cuda', dtype=torch.float16):
                 output = model_or_generate_fn(chunk)
                 torch.cuda.synchronize()
 
-            # Collect results and adjust chunk size
             results.append(output)
             i += current_chunk_size
             
-            # Dynamic chunk size adjustment
-            if chunk_size < max_chunk_size:
-                chunk_size = min(chunk_size * 2, max_chunk_size)
+            # Controlled scaling
+            chunk_size = min(int(chunk_size * scaling_factor), max_chunk_size)
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                print(f"[WARNING] OOM encountered. Reducing chunk size...")
+                print(f"[WARNING] OOM at chunk {current_chunk_size}. Scaling back...")
                 torch.cuda.empty_cache()
                 chunk_size = max(min_chunk_size, chunk_size // 2)
             else:
@@ -494,14 +492,16 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
         if len(cropped_images) > 0:
             crop_tensors = processor(images=cropped_images, return_tensors="pt", padding=True).pixel_values.to(device)
 
+            # Update the generation function for maximum speed
             def generate_fn(batch):
                 return trocr_model.generate(
                     batch,
-                    max_length=40,
-                    num_beams=1,
-                    early_stopping=True,
+                    max_length=24,          # Reduced from 32
+                    num_beams=1,            # Disable beam search
+                    early_stopping=False,   # Remove early stopping check
+                    do_sample=False,        # Disable sampling
                     pad_token_id=processor.tokenizer.pad_token_id,
-                    output_scores=True,
+                    output_scores=False,
                     return_dict_in_generate=True
                 ).sequences
 
