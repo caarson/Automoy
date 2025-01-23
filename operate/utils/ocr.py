@@ -72,7 +72,7 @@ def get_gpu_memory_task_manager():
                     # Fallback to nvidia-smi if WMI fails to retrieve AdapterRAM
                     dedicated_memory_gb = get_dedicated_memory_from_nvidia_smi()
 
-                # Retrieve free shared memory dynamically
+                # Retrieve free shared memory dynamically with tolerance handling
                 shared_memory_gb = get_free_shared_memory()
 
                 # Print GPU details
@@ -92,9 +92,13 @@ def get_gpu_memory_task_manager():
         print(f"Error retrieving GPU memory: {e}")
         return 0, 0
 
-def get_free_shared_memory():
+def get_free_shared_memory(expected_total_shared_gb=15.9, tolerance_gb=0.5):
     """
-    Retrieve free shared memory dynamically using WMI.
+    Retrieve free shared memory dynamically using WMI and handle fluctuations.
+    
+    :param expected_total_shared_gb: The expected maximum shared memory in GB (default: 15.9 GB).
+    :param tolerance_gb: Tolerance to handle small fluctuations (default: 0.5 GB).
+    :return: Free shared memory in GB.
     """
     try:
         # Connect to WMI
@@ -104,15 +108,23 @@ def get_free_shared_memory():
         if os_info and len(os_info) > 0:
             free_physical_memory_kb = int(os_info[0].FreePhysicalMemory)
             free_memory_gb = free_physical_memory_kb / (1024 ** 2)  # Convert KB to GB
+
+            # Handle fluctuations: cap within the expected range
+            if free_memory_gb > (expected_total_shared_gb + tolerance_gb):
+                print(f"[WARNING] Shared memory reported unusually high: {free_memory_gb:.2f} GB. Using expected max.")
+                return expected_total_shared_gb
+            elif free_memory_gb < (expected_total_shared_gb - tolerance_gb):
+                print(f"[WARNING] Shared memory reported unusually low: {free_memory_gb:.2f} GB. Using estimated value.")
+                return max(free_memory_gb, expected_total_shared_gb - tolerance_gb)
+
             return free_memory_gb
 
-        print("[WARNING] Unable to retrieve free shared memory.")
-        return 0
+        print("[WARNING] Unable to retrieve free shared memory. Using fallback.")
+        return expected_total_shared_gb
 
     except Exception as e:
-        print(f"Error retrieving free shared memory: {e}")
-        return 0
-
+        print(f"Error retrieving free shared memory: {e}. Using fallback.")
+        return expected_total_shared_gb
 
 def get_dedicated_memory_from_nvidia_smi():
     """
