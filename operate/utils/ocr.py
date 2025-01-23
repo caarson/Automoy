@@ -50,8 +50,7 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
 
 def get_gpu_memory_task_manager():
     """
-    Retrieve GPU memory statistics using WMI and fallback methods.
-    Retrieves both dedicated and shared memory.
+    Retrieve GPU memory statistics for the NVIDIA GPU using WMI and fallback methods.
     """
     try:
         # Connect to WMI
@@ -60,32 +59,40 @@ def get_gpu_memory_task_manager():
 
         for controller in video_controllers:
             adapter_name = controller.Name
-            adapter_ram = controller.AdapterRAM
-            driver_version = controller.DriverVersion
 
-            # Validate and calculate dedicated memory
-            if adapter_ram is not None and adapter_ram > 0:
-                dedicated_memory_gb = adapter_ram / (1024 ** 3)
-            else:
-                # Fallback to nvidia-smi if WMI fails to retrieve AdapterRAM
-                dedicated_memory_gb = get_dedicated_memory_from_nvidia_smi()
+            # Focus only on NVIDIA GPUs
+            if "NVIDIA" in adapter_name:
+                adapter_ram = controller.AdapterRAM
+                driver_version = controller.DriverVersion
 
-            # Shared memory estimate
-            shared_memory_gb = 16.0  # Task Manager dynamically allocates shared memory
+                # Validate and calculate dedicated memory
+                if adapter_ram is not None and adapter_ram > 0:
+                    dedicated_memory_gb = adapter_ram / (1024 ** 3)
+                else:
+                    # Fallback to nvidia-smi if WMI fails to retrieve AdapterRAM
+                    dedicated_memory_gb = get_dedicated_memory_from_nvidia_smi()
 
-            # Print GPU details
-            print(f"Adapter: {adapter_name}")
-            print(f"Driver Version: {driver_version}")
-            print(f"Dedicated Memory: {dedicated_memory_gb:.2f} GB")
-            print(f"Shared Memory: {shared_memory_gb:.2f} GB")
+                # Shared memory estimate
+                shared_memory_gb = 16.0  # Task Manager dynamically allocates shared memory
 
-            # Return results
-            return dedicated_memory_gb, shared_memory_gb
+                # Print GPU details
+                print(f"Adapter: {adapter_name}")
+                print(f"Driver Version: {driver_version}")
+                print(f"Dedicated Memory: {dedicated_memory_gb:.2f} GB")
+                print(f"Shared Memory: {shared_memory_gb:.2f} GB")
+
+                # Return results
+                return dedicated_memory_gb, shared_memory_gb
+
+        # If no NVIDIA GPU is found, return 0
+        print("No NVIDIA GPU found.")
+        return 0, 0
 
     except Exception as e:
         print(f"Error retrieving GPU memory: {e}")
         return 0, 0
-    
+
+
 def get_dedicated_memory_from_nvidia_smi():
     """
     Retrieve dedicated GPU memory using nvidia-smi as a fallback.
