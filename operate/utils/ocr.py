@@ -357,7 +357,9 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
 
     final_ocr_results = []
 
-    with Image.open(image_path) as full_img:
+    with Image.open(image_path) as img:
+        # Ensure the image is fully loaded into memory
+        full_img = img.copy()
         full_width, full_height = full_img.size
 
     # Get GPU memory limits
@@ -397,7 +399,7 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
             abs_xmax = xmax * full_width
             abs_ymax = ymax * full_height
 
-            # Crop from the original image
+            # Crop from the fully loaded image
             crop = full_img.crop((abs_xmin, abs_ymin, abs_xmax, abs_ymax))
 
             # Resize for TrOCR input (384x384 is standard)
