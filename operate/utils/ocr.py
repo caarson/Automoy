@@ -72,7 +72,7 @@ def get_gpu_memory_task_manager():
                     # Fallback to nvidia-smi if WMI fails to retrieve AdapterRAM
                     dedicated_memory_gb = get_dedicated_memory_from_nvidia_smi()
 
-                # Retrieve free shared memory dynamically with tolerance handling
+                # Retrieve free shared memory with proper validation
                 shared_memory_gb = get_free_shared_memory()
 
                 # Print GPU details
@@ -89,14 +89,15 @@ def get_gpu_memory_task_manager():
         return 0, 0
 
     except Exception as e:
-        print(f"Error retrieving GPU memory: {e}")
+        print(f"[ERROR] Error retrieving GPU memory: {e}")
         return 0, 0
 
-def get_free_shared_memory(expected_total_shared_gb=15.9, tolerance_gb=0.5):
+def get_free_shared_memory(fallback_shared_gb=6.0, max_shared_gb=15.9, tolerance_gb=0.5):
     """
-    Retrieve free shared memory dynamically using WMI and handle fluctuations.
-    
-    :param expected_total_shared_gb: The expected maximum shared memory in GB (default: 15.9 GB).
+    Retrieve free shared memory dynamically and handle fluctuations.
+
+    :param fallback_shared_gb: Fallback shared memory in GB if the actual value is invalid (default: 6.0 GB).
+    :param max_shared_gb: Maximum possible shared memory in GB (default: 15.9 GB).
     :param tolerance_gb: Tolerance to handle small fluctuations (default: 0.5 GB).
     :return: Free shared memory in GB.
     """
@@ -109,22 +110,21 @@ def get_free_shared_memory(expected_total_shared_gb=15.9, tolerance_gb=0.5):
             free_physical_memory_kb = int(os_info[0].FreePhysicalMemory)
             free_memory_gb = free_physical_memory_kb / (1024 ** 2)  # Convert KB to GB
 
-            # Handle fluctuations: cap within the expected range
-            if free_memory_gb > (expected_total_shared_gb + tolerance_gb):
-                print(f"[WARNING] Shared memory reported unusually high: {free_memory_gb:.2f} GB. Using expected max.")
-                return expected_total_shared_gb
-            elif free_memory_gb < (expected_total_shared_gb - tolerance_gb):
-                print(f"[WARNING] Shared memory reported unusually low: {free_memory_gb:.2f} GB. Using estimated value.")
-                return max(free_memory_gb, expected_total_shared_gb - tolerance_gb)
-
+            # Validate the free memory within expected ranges
+            if free_memory_gb > max_shared_gb:
+                print(f"[WARNING] Shared memory reported unusually high: {free_memory_gb:.2f} GB. Using max limit.")
+                return max_shared_gb
+            elif free_memory_gb < fallback_shared_gb - tolerance_gb:
+                print(f"[WARNING] Shared memory reported unusually low: {free_memory_gb:.2f} GB. Using fallback value.")
+                return fallback_shared_gb
             return free_memory_gb
 
-        print("[WARNING] Unable to retrieve free shared memory. Using fallback.")
-        return expected_total_shared_gb
+        print("[WARNING] Unable to retrieve free shared memory. Using fallback value.")
+        return fallback_shared_gb
 
     except Exception as e:
-        print(f"Error retrieving free shared memory: {e}. Using fallback.")
-        return expected_total_shared_gb
+        print(f"[ERROR] Error retrieving free shared memory: {e}. Using fallback value.")
+        return fallback_shared_gb
 
 def get_dedicated_memory_from_nvidia_smi():
     """
@@ -217,20 +217,25 @@ def compute_scale_factor(page_tensor, memory_limit, overhead_factor=4.0):
     scale_factor = min(scale_factor, 1.0)  # Ensure not to upscale
     return scale_factor
 
-def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale=0.25, scale_step=0.75):
+def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale=0.25, scale_step=0.9, overhead_margin=0.9):
     """
     Attempt to run docTR detection on a single page tensor with dynamic scaling.
-    Starts with a computed scale factor and reduces it by scale_step until it fits.
+    Starts with a computed scale factor and reduces it iteratively until it fits within memory constraints.
 
     :param page_tensor: CHW float tensor on CPU
     :param model: docTR detection model (on GPU)
     :param memory_limit: available memory in bytes
     :param min_scale: minimum scale factor to prevent excessive downscaling
-    :param scale_step: factor by which to reduce scale each step
+    :param scale_step: factor by which to reduce scale each step (default: 0.9 for gradual adjustment)
+    :param overhead_margin: multiplier to reserve memory buffer (default: 0.9 to use 90% of available memory)
     :return: detection_results (dictionary), scale_factor actually used
     """
+    # Apply margin to memory limit
+    adjusted_memory_limit = memory_limit * overhead_margin
+    print(f"[INFO] Adjusted memory limit with overhead margin: {adjusted_memory_limit / (1024 ** 3):.2f} GB")
+
     # Initial scale factor based on memory estimation
-    scale_factor = compute_scale_factor(page_tensor, memory_limit)
+    scale_factor = compute_scale_factor(page_tensor, adjusted_memory_limit)
     if scale_factor < min_scale:
         scale_factor = min_scale
 
@@ -267,7 +272,7 @@ def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale
             if "out of memory" in str(e).lower():
                 print(f"[WARNING] OOM at scale_factor={scale_factor:.3f}. Reducing scale.")
                 torch.cuda.empty_cache()
-                # Reduce scale_factor
+                # Gradually reduce scale_factor for better resolution
                 scale_factor *= scale_step
             else:
                 raise e
@@ -337,35 +342,34 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, chunk_size=8)
 
 def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
     """
-    End-to-end OCR using docTR for detection and TrOCR for recognition.
-    Dynamically adjusts processing to avoid exceeding memory limits.
+    Perform OCR on the image file while dynamically adjusting for GPU memory constraints.
 
-    :param image_path: Path to the image file
-    :param min_scale: Minimum scaling factor
-    :param scale_step: Factor by which to reduce scale when OOM occurs
-    :return: List of OCR results
+    :param image_path: Path to the image file.
+    :param min_scale: Minimum scaling factor for detection.
+    :param scale_step: Reduction factor for scaling in case of OOM.
+    :return: List of OCR results.
     """
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    # Load the image as a docTR DocumentFile object (list of pages as NumPy arrays)
-    pages = DocumentFile.from_images(image_path)  # Returns list of np.array([...])
+    # Load image as docTR DocumentFile object
+    pages = DocumentFile.from_images(image_path)
 
     final_ocr_results = []
 
     with Image.open(image_path) as full_img:
         full_width, full_height = full_img.size
 
-    # Get total GPU memory limit
+    # Get GPU memory limits
     memory_limit = get_total_gpu_memory_bytes()
     if memory_limit == 0:
-        raise RuntimeError("Unable to determine GPU memory. Ensure NVIDIA drivers are correctly installed.")
+        raise RuntimeError("Unable to determine GPU memory. Ensure NVIDIA drivers are installed.")
 
     for page_idx, page in enumerate(pages):
         print(f"[INFO] Processing page {page_idx + 1}/{len(pages)}")
-        page_tensor = torch.tensor(page).permute(2, 0, 1).float() / 255.0  # [C, H, W]
+        page_tensor = torch.tensor(page).permute(2, 0, 1).float() / 255.0
 
-        # --- Step 1: DETECTION with dynamic scaling ---
+        # Dynamic scaling for detection
         try:
             detection_dict, scale_used = detect_page_with_dynamic_scaling(
                 page_tensor, det_model, memory_limit, min_scale=min_scale, scale_step=scale_step
