@@ -7,6 +7,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw
 import torch
 from torchvision.transforms import functional as F
+from torch.utils.data import DataLoader, TensorDataset
 
 # --- GPU Memory Management Imports ---
 import wmi
@@ -295,7 +296,7 @@ def compute_scale_factor(page_tensor, memory_limit, overhead_factor=4.0):
     scale_factor = min(scale_factor, 1.0)  # Ensure not to upscale
     return scale_factor
 
-def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale=0.25, scale_step=0.9, overhead_margin=0.9):
+def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale=0.25, scale_step=0.9, overhead_margin=1.0):
     """
     Attempt to run docTR detection on a single page tensor with dynamic scaling.
     Starts with a computed scale factor and reduces it iteratively until it fits within memory constraints.
@@ -359,35 +360,40 @@ def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale
 
 # In the adaptive_chunking function definition, add max_chunk_size parameter
 def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, 
-                      initial_chunk_size=64,  # Larger initial chunk size
-                      max_chunk_size=512,    # Allow larger chunk sizes
-                      min_chunk_size=8):     # Minimum chunk size
+                      initial_chunk_size=64,  # Starting chunk size
+                      max_chunk_size=2048,   # Aggressively increase to use memory
+                      min_chunk_size=16):    # Minimum chunk size for safety
     """
     Dynamically process tensors in chunks while maximizing GPU memory utilization.
     """
     results = []
-    i = 0
     total = tensors.size(0)
     chunk_size = initial_chunk_size
     print(f"[INFO] Total number of tensors: {total}, Initial chunk size: {chunk_size}")
 
-    while i < total:
-        current_chunk_size = min(chunk_size, total - i)
-        chunk = tensors[i:i + current_chunk_size].to(device, non_blocking=True)  # Fixed
+    # Use DataLoader for efficient batching and parallel data loading
+    dataset = TensorDataset(tensors)
+    dataloader = DataLoader(dataset, batch_size=chunk_size, pin_memory=True, num_workers=4)
 
-        print(f"[DEBUG] Processing chunk {i // chunk_size + 1} with size {current_chunk_size}...")
+    for batch_idx, batch in enumerate(dataloader):
+        chunk = batch[0].to(device, non_blocking=True)  # Transfer to GPU
+        remaining_batches = len(dataloader) - batch_idx
+
+        print(f"[INFO] Processing batch {batch_idx + 1}/{len(dataloader)} "
+              f"({(batch_idx / len(dataloader)) * 100:.2f}% complete)...")
 
         try:
             # Monitor GPU memory usage
-            used_total_memory_gb, free_total_memory_gb, total_memory_gb = get_gpu_memory_usage()
-            print(f"[INFO] Total GPU Memory: Used: {used_total_memory_gb:.2f} GB, Free: {free_total_memory_gb:.2f} GB, Total: {total_memory_gb:.2f} GB")
-
+            used_dedicated, free_dedicated, total_dedicated, used_shared, free_shared, total_shared = get_gpu_memory_usage()
+            print(f"[INFO] GPU Memory - Dedicated: {used_dedicated:.2f}/{total_dedicated:.2f} GB, "
+                  f"Shared: {used_shared:.2f}/{total_shared:.2f} GB")
 
             # Adjust chunk size dynamically
-            if free_dedicated + free_shared > 1.0:  # Leave a 1 GB buffer
-                max_tensors_in_memory = int((free_dedicated + free_shared - 1.0) * (1024 ** 3) / chunk.element_size())
+            available_memory_gb = free_dedicated + free_shared - 1.0  # Leave 1 GB buffer
+            if available_memory_gb > 0:
+                max_tensors_in_memory = int((available_memory_gb * (1024 ** 3)) / chunk.element_size())
                 chunk_size = min(max_chunk_size, max(min_chunk_size, max_tensors_in_memory))
-                print(f"[INFO] Increasing chunk size to {chunk_size}")
+                print(f"[INFO] Adjusting chunk size to {chunk_size}")
             else:
                 chunk_size = max(min_chunk_size, chunk_size // 2)
                 print(f"[WARNING] Reducing chunk size to {chunk_size} due to low memory.")
@@ -400,9 +406,8 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit,
 
             # Collect results
             results.append(output)
-            i += current_chunk_size
 
-            # Cleanup
+            # Cleanup to free memory
             del chunk, output
             torch.cuda.empty_cache()
 
