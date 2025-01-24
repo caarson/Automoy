@@ -200,7 +200,11 @@ def get_gpu_memory_usage():
 
         pynvml.nvmlShutdown()
 
-        return used_total_memory_gb, free_total_memory_gb, total_memory_gb
+        return (
+            used_dedicated_memory_gb, free_dedicated_memory_gb, total_dedicated_memory_gb,
+            used_shared_memory_gb, free_shared_memory_gb, total_shared_memory_gb
+        )
+    
     except pynvml.NVMLError as e:
         print(f"[ERROR] Unable to retrieve GPU memory usage: {e}")
         return 0, 0, 0
@@ -238,7 +242,7 @@ try:
     ).eval().to(device)
     
     # Warmup GPU with dummy inference using correct input size
-    with torch.no_grad(), torch.cuda.amp.autocast():
+    with torch.no_grad(), torch.amp.autocast(device_type='cuda', dtype=torch.float16):
         dummy_input = torch.randn(1, 3, 384, 384, device=device, dtype=torch.float16)  # Changed to 384x384
         _ = trocr_model.generate(dummy_input, max_length=10)
     
@@ -355,59 +359,65 @@ def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale
 
 # In the adaptive_chunking function definition, add max_chunk_size parameter
 def adaptive_chunking(tensors, model_or_generate_fn, memory_limit, 
-                      initial_chunk_size=8,  # Reduced from 16
-                      max_chunk_size=32,     # Reduced from 64
-                      min_chunk_size=1):
+                      initial_chunk_size=64,  # Larger initial chunk size
+                      max_chunk_size=512,    # Allow larger chunk sizes
+                      min_chunk_size=8):     # Minimum chunk size
     """
     Dynamically process tensors in chunks while maximizing GPU memory utilization.
-    Added max_chunk_size to prevent oversized batches during generation.
     """
     results = []
     i = 0
     total = tensors.size(0)
     chunk_size = initial_chunk_size
-    print(f"[INFO] Total number of tensors: {total}")
+    print(f"[INFO] Total number of tensors: {total}, Initial chunk size: {chunk_size}")
 
     while i < total:
-        # Enforce maximum chunk size
-        current_chunk_size = min(chunk_size, total - i, max_chunk_size)
-        chunk = tensors[i:i + current_chunk_size].to(device)
-        print(f"[DEBUG] Processing chunk {i // current_chunk_size + 1} with size {current_chunk_size}...")
+        current_chunk_size = min(chunk_size, total - i)
+        chunk = tensors[i:i + current_chunk_size].to(device, non_blocking=True)  # Fixed
+
+        print(f"[DEBUG] Processing chunk {i // chunk_size + 1} with size {current_chunk_size}...")
 
         try:
-            # Conservative memory estimation with generation overhead factor
-            element_size = chunk.element_size()
-            estimated_mem_per_element = chunk[0].nelement() * element_size * 10  # 10x conservative multiplier
-            safe_batch_size = int((memory_limit * 0.8) // estimated_mem_per_element)
-            current_chunk_size = min(current_chunk_size, safe_batch_size, max_chunk_size)
-            
-            if current_chunk_size < 1:
-                raise RuntimeError("Memory requirements exceed available GPU memory")
+            # Monitor GPU memory usage
+            used_total_memory_gb, free_total_memory_gb, total_memory_gb = get_gpu_memory_usage()
+            print(f"[INFO] Total GPU Memory: Used: {used_total_memory_gb:.2f} GB, Free: {free_total_memory_gb:.2f} GB, Total: {total_memory_gb:.2f} GB")
 
-            chunk = tensors[i:i + current_chunk_size].to(device)
 
-            # Perform GPU operations with optimized generation parameters
-            with torch.no_grad(), torch.cuda.amp.autocast(dtype=torch.float16):
+            # Adjust chunk size dynamically
+            if free_dedicated + free_shared > 1.0:  # Leave a 1 GB buffer
+                max_tensors_in_memory = int((free_dedicated + free_shared - 1.0) * (1024 ** 3) / chunk.element_size())
+                chunk_size = min(max_chunk_size, max(min_chunk_size, max_tensors_in_memory))
+                print(f"[INFO] Increasing chunk size to {chunk_size}")
+            else:
+                chunk_size = max(min_chunk_size, chunk_size // 2)
+                print(f"[WARNING] Reducing chunk size to {chunk_size} due to low memory.")
+                continue
+
+            # Perform GPU operations
+            with torch.no_grad(), torch.amp.autocast(device_type='cuda', dtype=torch.float16):
                 output = model_or_generate_fn(chunk)
                 torch.cuda.synchronize()
 
-            # Collect results and adjust chunk size
+            # Collect results
             results.append(output)
             i += current_chunk_size
-            
-            # Dynamic chunk size adjustment
-            if chunk_size < max_chunk_size:
-                chunk_size = min(chunk_size * 2, max_chunk_size)
+
+            # Cleanup
+            del chunk, output
+            torch.cuda.empty_cache()
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                print(f"[WARNING] OOM encountered. Reducing chunk size...")
+                print("[WARNING] OOM encountered. Reducing chunk size.")
                 torch.cuda.empty_cache()
                 chunk_size = max(min_chunk_size, chunk_size // 2)
             else:
                 raise e
 
-    return torch.cat(results, dim=0) if isinstance(results[0], torch.Tensor) else results
+    # Concatenate results
+    if isinstance(results[0], torch.Tensor):
+        return torch.cat(results, dim=0)
+    return results
 
 def timeout_handler():
     raise TimeoutException("Recognition process exceeded time limit.")
@@ -418,36 +428,25 @@ def timeout_handler():
 def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
     """
     Perform OCR on the image file while ensuring GPU utilization for all operations.
-
-    :param image_path: Path to the image file.
-    :param min_scale: Minimum scaling factor for detection.
-    :param scale_step: Reduction factor for scaling in case of OOM.
-    :return: List of OCR results.
     """
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found: {image_path}")
 
-    # Load image as docTR DocumentFile object
     pages = DocumentFile.from_images(image_path)
-
     final_ocr_results = []
 
     with Image.open(image_path) as img:
-        full_img = img.copy()  # Ensure the image is loaded into memory
+        full_img = img.copy()
         full_width, full_height = full_img.size
 
-    # GPU memory configuration
     memory_limit = get_total_gpu_memory_bytes()
     print(f"[INFO] Total GPU Memory Limit: {memory_limit / (1024 ** 3):.2f} GB")
 
     for page_idx, page in enumerate(pages):
         print(f"[INFO] Processing page {page_idx + 1}/{len(pages)}")
 
-        # Convert to tensor and normalize properly
-        page_tensor = torch.tensor(page).permute(2, 0, 1).float().to(device)
-        page_tensor = page_tensor / 255.0  # Keep in float32
+        page_tensor = torch.tensor(page).permute(2, 0, 1).float().cpu() / 255.0
 
-        # Dynamic scaling for detection
         try:
             detection_dict, scale_used = detect_page_with_dynamic_scaling(
                 page_tensor, det_model, memory_limit, min_scale=min_scale, scale_step=scale_step
@@ -456,11 +455,7 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
             print(f"[ERROR] Failed to detect text on page {page_idx + 1}: {e}")
             continue
 
-        # ADD DEBUG LINES HERE ------------------
-        print(f"Raw detection output: {detection_dict}")  # Debug output
-        preds = detection_dict["preds"][0] if len(detection_dict["preds"]) > 0 else None
-        # ---------------------------------------
-        
+        preds = detection_dict.get("preds", [])[0]
         if not preds or len(preds["words"]) == 0:
             print(f"[INFO] No text detected on page {page_idx + 1}")
             continue
@@ -468,62 +463,30 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
         cropped_images = []
         polygons_and_conf = []
 
-        # Crop and resize images for recognition
-        for box_idx, (xmin, ymin, xmax, ymax, conf) in enumerate(preds["words"]):
+        for xmin, ymin, xmax, ymax, conf in preds["words"]:
             if conf < 0.3:
                 continue
-
-            abs_xmin, abs_ymin = xmin * full_width, ymin * full_height
-            abs_xmax, abs_ymax = xmax * full_width, ymax * full_height
-
-            crop = full_img.crop((abs_xmin, abs_ymin, abs_xmax, abs_ymax))
-            # In perform_ocr() function, change crop size:
-            crop_resized = crop.resize((384, 384), Image.Resampling.LANCZOS)  # Was 256x256
-            cropped_images.append(crop_resized)
-
-            polygon = [
-                [abs_xmin, abs_ymin],
-                [abs_xmax, abs_ymin],
-                [abs_xmax, abs_ymax],
-                [abs_xmin, abs_ymax],
-            ]
-            polygons_and_conf.append((polygon, conf))
-
-        print(f"[DEBUG] {len(cropped_images)} cropped images prepared for recognition.")
+            abs_coords = (xmin * full_width, ymin * full_height, xmax * full_width, ymax * full_height)
+            crop = full_img.crop(abs_coords).resize((384, 384), Image.Resampling.LANCZOS)
+            cropped_images.append(crop)
+            polygons_and_conf.append(([
+                [xmin * full_width, ymin * full_height],
+                [xmax * full_width, ymin * full_height],
+                [xmax * full_width, ymax * full_height],
+                [xmin * full_width, ymax * full_height],
+            ], conf))
 
         if len(cropped_images) > 0:
             crop_tensors = processor(images=cropped_images, return_tensors="pt", padding=True).pixel_values.to(device)
 
             def generate_fn(batch):
-                return trocr_model.generate(
-                    batch,
-                    max_length=40,
-                    num_beams=1,
-                    early_stopping=True,
-                    pad_token_id=processor.tokenizer.pad_token_id,
-                    output_scores=True,
-                    return_dict_in_generate=True
-                ).sequences
+                return trocr_model.generate(batch, max_length=40)
 
-            try:
-                texts = []
-                print("[INFO] Starting text recognition in batches...")
-                generated_ids = adaptive_chunking(crop_tensors, generate_fn, memory_limit)
-                if generated_ids is not None:
-                    texts = processor.batch_decode(generated_ids, skip_special_tokens=True)
-                    print(f"[INFO] Recognition completed for {len(texts)} text segments.")
-                else:
-                    print(f"[WARNING] No recognition results for page {page_idx + 1}")
+            texts = adaptive_chunking(crop_tensors, generate_fn, memory_limit)
+            texts = processor.batch_decode(texts, skip_special_tokens=True)
 
-            except RuntimeError as e:
-                print(f"[ERROR] Recognition failed on page {page_idx + 1}: {e}")
-                continue
-
-            # Compile OCR results
             for (polygon, conf), txt in zip(polygons_and_conf, texts):
                 final_ocr_results.append([polygon, [txt, conf]])
-        else:
-            print("[INFO] No valid cropped images for recognition.")
 
     return final_ocr_results
 
