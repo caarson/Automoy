@@ -131,6 +131,27 @@ def get_free_shared_memory(fallback_shared_gb=6.0, max_shared_gb=15.9, tolerance
     except Exception as e:
         print(f"[ERROR] Error retrieving free shared memory: {e}. Using fallback value.")
         return fallback_shared_gb
+    
+def allocate_shared_memory(memory_requirement_gb, tolerance=0.5):
+    """
+    Dynamically allocate shared memory based on the required GPU memory.
+    
+    :param memory_requirement_gb: Required shared memory in GB.
+    :param tolerance: Extra memory buffer to ensure safe allocation.
+    :return: Adjusted allocated shared memory.
+    """
+    try:
+        free_shared_memory_gb = get_free_shared_memory()
+        if memory_requirement_gb + tolerance <= free_shared_memory_gb:
+            print(f"[INFO] Allocating {memory_requirement_gb:.2f} GB shared memory.")
+            return memory_requirement_gb
+        else:
+            allocated_memory_gb = free_shared_memory_gb - tolerance
+            print(f"[WARNING] Not enough shared memory. Allocating {allocated_memory_gb:.2f} GB instead.")
+            return max(0, allocated_memory_gb)
+    except Exception as e:
+        print(f"[ERROR] Failed to allocate shared memory: {e}")
+        return 0
 
 def get_dedicated_memory_from_nvidia_smi():
     """
@@ -214,6 +235,10 @@ def get_gpu_memory_usage():
 # Device Initialization (MUST COME FIRST)
 # -----------------------------
 device = torch.device("cuda")
+try:
+    torch.cuda.empty_cache()
+except RuntimeError as e:
+    print(f"[WARNING] Failed to clear GPU cache: {e}. Proceeding without clearing cache.")
 print(f"[INFO] Using device: {device}")
 
 # -----------------------------
@@ -221,8 +246,14 @@ print(f"[INFO] Using device: {device}")
 # -----------------------------
 try:
     # Load detection model with full precision
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:256"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Ensure the right GPU is targeted
+
     det_model = detection.db_resnet50(pretrained=True)
     det_model = det_model.eval().to(device)
+    print(f"[DEBUG] Allocated GPU memory: {torch.cuda.memory_allocated() / (1024 ** 3):.2f} GB")
+    print(f"[DEBUG] Reserved GPU memory: {torch.cuda.memory_reserved() / (1024 ** 3):.2f} GB")
+
     print("[SUCCESS] Detection model loaded in FP32")
 except Exception as e:
     print(f"[ERROR] Failed to initialize detection model: {e}")
@@ -311,6 +342,11 @@ def detect_page_with_dynamic_scaling(page_tensor, model, memory_limit, min_scale
     """
     # Apply margin to memory limit
     adjusted_memory_limit = memory_limit * overhead_margin
+    required_shared_memory_gb = estimate_detection_memory(page_tensor.shape[1], page_tensor.shape[2], dtype_bytes=4) / (1024 ** 3)
+    allocated_shared_memory = allocate_shared_memory(required_shared_memory_gb)
+    if allocated_shared_memory <= 0:
+        raise RuntimeError("Insufficient shared memory to process the image.")
+
     print(f"[INFO] Adjusted memory limit with overhead margin: {adjusted_memory_limit / (1024 ** 3):.2f} GB")
 
     # Initial scale factor based on memory estimation
@@ -371,9 +407,12 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit,
     chunk_size = initial_chunk_size
     print(f"[INFO] Total number of tensors: {total}, Initial chunk size: {chunk_size}")
 
+    # Ensure tensors are moved to the correct device for processing
+    tensors = tensors.to("cpu")  # Move tensors to CPU for pinning if needed
+
     # Use DataLoader for efficient batching and parallel data loading
     dataset = TensorDataset(tensors)
-    dataloader = DataLoader(dataset, batch_size=chunk_size, pin_memory=True, num_workers=4)
+    dataloader = DataLoader(dataset, batch_size=chunk_size, num_workers=4, pin_memory=True, persistent_workers=True)
 
     for batch_idx, batch in enumerate(dataloader):
         chunk = batch[0].to(device, non_blocking=True)  # Transfer to GPU
@@ -389,15 +428,19 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit,
                   f"Shared: {used_shared:.2f}/{total_shared:.2f} GB")
 
             # Adjust chunk size dynamically
-            available_memory_gb = free_dedicated + free_shared - 1.0  # Leave 1 GB buffer
+            required_shared_memory = tensors.element_size() * tensors.numel() / (1024 ** 3)
+            allocated_shared_memory = allocate_shared_memory(required_shared_memory)
+
+            available_memory_gb = free_dedicated + allocated_shared_memory - 1.5  # Leave 1.5 GB buffer
+
             if available_memory_gb > 0:
-                max_tensors_in_memory = int((available_memory_gb * (1024 ** 3)) / chunk.element_size())
-                chunk_size = min(max_chunk_size, max(min_chunk_size, max_tensors_in_memory))
-                print(f"[INFO] Adjusting chunk size to {chunk_size}")
+                estimated_chunk_size = int((available_memory_gb * (1024 ** 3)) / tensors.element_size())
+                chunk_size = min(chunk_size, max(min_chunk_size, estimated_chunk_size))
+                print(f"[INFO] Adjusted chunk size to {chunk_size}")
             else:
                 chunk_size = max(min_chunk_size, chunk_size // 2)
                 print(f"[WARNING] Reducing chunk size to {chunk_size} due to low memory.")
-                continue
+
 
             # Perform GPU operations
             with torch.no_grad(), torch.amp.autocast(device_type='cuda', dtype=torch.float16):
@@ -413,11 +456,15 @@ def adaptive_chunking(tensors, model_or_generate_fn, memory_limit,
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                print("[WARNING] OOM encountered. Reducing chunk size.")
+                print(f"[WARNING] Out of GPU memory at scale_factor={scale_factor:.3f}. Retrying with lower scale.")
                 torch.cuda.empty_cache()
-                chunk_size = max(min_chunk_size, chunk_size // 2)
+                scale_factor *= scale_step
+            elif "cuda" in str(e).lower():
+                print(f"[ERROR] CUDA error during detection: {e}.")
+                raise RuntimeError("GPU processing failed, consider using a smaller image or fallback to CPU.") from e
             else:
-                raise e
+                raise
+
 
     # Concatenate results
     if isinstance(results[0], torch.Tensor):
@@ -445,6 +492,11 @@ def perform_ocr(image_path, min_scale=0.25, scale_step=0.75):
         full_width, full_height = full_img.size
 
     memory_limit = get_total_gpu_memory_bytes()
+    required_shared_memory_gb = sum(estimate_detection_memory(p.shape[1], p.shape[2]) / (1024 ** 3) for p in pages)
+    allocated_shared_memory = allocate_shared_memory(required_shared_memory_gb)
+    if allocated_shared_memory <= 0:
+        raise RuntimeError("Unable to allocate shared memory for OCR processing.")
+
     print(f"[INFO] Total GPU Memory Limit: {memory_limit / (1024 ** 3):.2f} GB")
 
     for page_idx, page in enumerate(pages):
@@ -522,8 +574,16 @@ if __name__ == "__main__":
                 ocr_data_path = os.path.join(OCR_DIR, f"ocr_data_{datetime_str}.json")
                 store_ocr_results(ocr_results, ocr_data_path)
                 print(f"OCR data saved at: {ocr_data_path}")
+
+                # Add the following block:
+                try:
+                    used_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)
+                    reserved_memory = torch.cuda.memory_reserved(device) / (1024 ** 3)
+                    print(f"[DEBUG] Final GPU Memory - Allocated: {used_memory:.2f} GB, Reserved: {reserved_memory:.2f} GB")
+                    torch.cuda.empty_cache()
+                except Exception as e:
+                    print(f"[WARNING] Failed to log or clear GPU memory: {e}")
             else:
                 print("No OCR results to save.")
-
         except Exception as e:
             print(f"Error: {e}")
