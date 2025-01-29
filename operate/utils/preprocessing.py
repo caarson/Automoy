@@ -43,7 +43,7 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
             
             # Match YOLO and OCR results if the coordinates are similar
             if any(
-                abs(p[0] - yolo_x) < 0.1 and abs(p[1] - yolo_y) < 0.1  # Increased threshold for better matching
+                abs(p[0] / 1920 - yolo_x) < 0.1 and abs(p[1] / 1080 - yolo_y) < 0.1  # Normalize for screen resolution
                 for p in polygon
             ):
                 combined_results.append({
@@ -54,17 +54,30 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
                     "coordinates": {
                         "x": yolo_x,
                         "y": yolo_y
-                    }
+                    },
+                    "matched": True
                 })
                 matched = True
                 break  # Stop checking other OCR polygons for this YOLO object
+    
         if not matched:
             # Add unmatched YOLO objects for debugging
-            print(f"No match for YOLO object: {yolo_obj}")
+            combined_results.append({
+                "label": yolo_obj["label"],
+                "confidence": yolo_obj["confidence"],
+                "text": None,
+                "ocr_confidence": None,
+                "coordinates": {
+                    "x": yolo_x,
+                    "y": yolo_y
+                },
+                "matched": False
+            })
 
-    # If no matches were found, indicate it clearly
-    if not combined_results:
-        print("[preprocessing] No matches found between YOLO and OCR results.")
+    # Add unmatched OCR results for debugging
+    for ocr_obj in ocr_results:
+        polygon, text, confidence = ocr_obj[0], ocr_obj[1], ocr_obj[2]
+        print(f"Unmatched OCR Polygon: {polygon}, Text: {text}, Confidence: {confidence}")
 
     # Simplify results for display
     simplified_results = [
@@ -73,7 +86,8 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
             "Label": result.get("label", "N/A"),
             "Confidence": result.get("confidence", 0),
             "OCR Confidence": result.get("ocr_confidence", 0),
-            "Coordinates": result.get("coordinates", {})
+            "Coordinates": result.get("coordinates", {}),
+            "Matched": result.get("matched", False)
         }
         for result in combined_results
     ]
