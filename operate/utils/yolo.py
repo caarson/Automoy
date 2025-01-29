@@ -20,10 +20,14 @@ class YOLODetector:
         # Load YOLO model and set device
         try:
             self.model = YOLO(weights)
-            self.model.to(device)
-            self.device = device
+            if torch.cuda.is_available() and device == "cuda":
+                self.device = "cuda"
+            else:
+                self.device = "cpu"
+            self.model.to(self.device)
+
             print(f"YOLO model loaded with weights: {weights}")
-            print(f"Running YOLO on device: {device}")
+            print(f"Running YOLO on device: {self.device}")
         except Exception as e:
             raise RuntimeError(f"Failed to load YOLO model: {e}")
 
@@ -40,7 +44,7 @@ class YOLODetector:
             raise FileNotFoundError(f"Image not found at: {image_path}")
 
         try:
-            results = self.model(image_path)
+            results = self.model(image_path, device=self.device)
             detected_objects = []
 
             for result in results:

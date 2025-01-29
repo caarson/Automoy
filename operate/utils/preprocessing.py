@@ -6,10 +6,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
 sys.path.insert(0, project_root)
 
-from operate.utils.ocr import perform_ocr
+from operate.utils.ocr import perform_easyocr as perform_ocr  # Ensure the correct function name is used
 from operate.utils.yolo import YOLODetector
 from operate.utils.screenshot import capture_screen_with_cursor
-
 
 # Initialize YOLO detector
 yolo_detector = YOLODetector()
@@ -20,7 +19,7 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
     Args:
         screenshot_path (str): Path to the screenshot for processing.
     Returns:
-        dict: Combined results from OCR and YOLO detection.
+        list: Simplified combined results from OCR and YOLO detection.
     """
     print("[preprocessing] Performing OCR and YOLO preprocessing...")
 
@@ -36,11 +35,15 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
     combined_results = []
     for yolo_obj in yolo_results:
         yolo_x, yolo_y = yolo_obj["x"], yolo_obj["y"]
+        matched = False
         for ocr_obj in ocr_results:
-            polygon, (text, confidence) = ocr_obj  # OCR result format
+            polygon, text, confidence = ocr_obj[0], ocr_obj[1], ocr_obj[2]  # Adjusted format to handle tuple indexing
+            # Debug: Print coordinate details for matching
+            print(f"Matching YOLO: ({yolo_x}, {yolo_y}) with OCR Polygon: {polygon}")
+            
             # Match YOLO and OCR results if the coordinates are similar
             if any(
-                abs(p[0] - yolo_x) < 0.05 and abs(p[1] - yolo_y) < 0.05
+                abs(p[0] - yolo_x) < 0.1 and abs(p[1] - yolo_y) < 0.1  # Increased threshold for better matching
                 for p in polygon
             ):
                 combined_results.append({
@@ -48,13 +51,35 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
                     "confidence": yolo_obj["confidence"],
                     "text": text,
                     "ocr_confidence": confidence,
-                    "x": yolo_x,
-                    "y": yolo_y
+                    "coordinates": {
+                        "x": yolo_x,
+                        "y": yolo_y
+                    }
                 })
+                matched = True
+                break  # Stop checking other OCR polygons for this YOLO object
+        if not matched:
+            # Add unmatched YOLO objects for debugging
+            print(f"No match for YOLO object: {yolo_obj}")
 
-    print(f"[preprocessing] Combined Results: {combined_results}")
-    return combined_results
+    # If no matches were found, indicate it clearly
+    if not combined_results:
+        print("[preprocessing] No matches found between YOLO and OCR results.")
 
+    # Simplify results for display
+    simplified_results = [
+        {
+            "Text": result.get("text", "N/A"),
+            "Label": result.get("label", "N/A"),
+            "Confidence": result.get("confidence", 0),
+            "OCR Confidence": result.get("ocr_confidence", 0),
+            "Coordinates": result.get("coordinates", {})
+        }
+        for result in combined_results
+    ]
+
+    print(f"[preprocessing] Combined Results: {simplified_results}")
+    return simplified_results
 
 # Main script
 if __name__ == "__main__":
@@ -79,7 +104,8 @@ if __name__ == "__main__":
             print(f"[preprocessing] Screenshot saved to: {screenshot_path}")
             results = await preprocess_with_ocr_and_yolo(screenshot_path)
             print("[preprocessing] Final Results:")
-            print(results)
+            for result in results:
+                print(result)
         else:
             print(f"[ERROR] Screenshot not found at {screenshot_path}.")
 
