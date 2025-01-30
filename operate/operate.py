@@ -28,7 +28,6 @@ from operate.model_handlers.handlers_apis import get_next_action
 config = Config()
 operating_system = OperatingSystem()
 
-
 def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_region=False):
     """
     Main function for the Self-Operating Computer.
@@ -59,7 +58,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     # Initialize `WhisperMic`, if `voice_mode` is True
 
     config.verbose = verbose_mode
-    config.validation(model, voice_mode)
+    config.validation(model)  # Fix: Removed extra argument
 
     ## Boot Arguments:
     # Enable define a region boot arg
