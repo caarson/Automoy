@@ -9,6 +9,7 @@ import Xlib.Xutil  # not sure if Xutil is necessary
 
 
 def capture_screen_with_cursor(file_path, region=None):
+    print("Capturing screen with region: " + str(region))
     user_platform = platform.system()
 
     if user_platform == "Windows":

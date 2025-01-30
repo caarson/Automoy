@@ -23,6 +23,7 @@ from operate.utils.style import (
 )
 from operate.utils.operating_system import OperatingSystem
 from operate.model_handlers.handlers_apis import get_next_action
+from operate.utils.screenshot import capture_screen_with_cursor
 
 # Load configuration
 config = Config()
@@ -59,6 +60,9 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
     config.verbose = verbose_mode
     config.validation(model)  # Fix: Removed extra argument
+
+    # Initialize region_coords to avoid undefined variable error
+    region_coords = None
 
     ## Boot Arguments:
     # Enable define a region boot arg
@@ -129,14 +133,22 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
     session_id = None
 
+    # Define screenshot path
+    screenshot_path = os.path.join(os.getcwd(), "operate", "data", "screenshots", "screenshot.png")
+    os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+    capture_screen_with_cursor(screenshot_path)
+
     while True:
         if config.verbose:
             print("[Self Operating Computer] loop_count", loop_count)
         try:
-            operations, session_id = asyncio.run(
-                get_next_action(model, messages, objective, session_id)
-            )
-
+            result = asyncio.run(get_next_action(model, messages, terminal_prompt, session_id, screenshot_path))
+            if result is None:
+                print(f"{ANSI_RED}[Error] get_next_action returned None.{ANSI_RESET}")
+                break
+            
+            operations, session_id = result if isinstance(result, tuple) else ([], None)
+            
             stop = operate(operations, model, region=region_coords)
             if stop:
                 break
@@ -154,7 +166,6 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
                 f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}"
             )
             break
-
 
 import time
 

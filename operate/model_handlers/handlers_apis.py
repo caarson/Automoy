@@ -2,11 +2,11 @@ from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
 from operate.model_handlers.openai_handler import call_openai_model
 from operate.model_handlers.lmstudio_handler import call_lmstudio_model
 
-async def get_next_action(model, messages, objective, session_id):
+async def get_next_action(model, messages, objective, session_id, screenshot_path):
     print(f"[handlers_api] Using model: {model}")
 
-    # Perform preprocessing with OCR and YOLO
-    combined_results = await preprocess_with_ocr_and_yolo()
+    # Perform preprocessing with OCR and YOLO, passing the screenshot path
+    combined_results = await preprocess_with_ocr_and_yolo(screenshot_path)
 
     # Add preprocessing results to messages
     messages.append({
@@ -16,7 +16,9 @@ async def get_next_action(model, messages, objective, session_id):
 
     # Route to the appropriate model handler
     if model.startswith("gpt") or "openai" in model:
-        return await call_openai_model(messages, objective, model), None
+        if model == "gpt-4-with-ocr-and-yolo":
+            model = "gpt-4"
+            return await call_openai_model(messages, objective, model), None
 
     if model.startswith("lmstudio"):
         return await call_lmstudio_model(messages, objective, model), None
