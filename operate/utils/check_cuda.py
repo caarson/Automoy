@@ -30,21 +30,15 @@ def run_yolo_checks():
         print("The 'yolo' CLI is not installed. Please install YOLO CLI with 'pip install ultralytics'.")
         return False
 
-def ensure_test_image():
+def get_test_image_path():
     """
-    Ensures the test image directory and file exist. Creates a placeholder if not found.
+    Returns the path to the test image in the expected directory. Ensures compatibility with the Anaconda environment.
     """
-    test_image_dir = os.path.join(os.getcwd(), "data", "YOLO", "test_image")
-    test_image_path = os.path.join(test_image_dir, "image.jpeg")
-
-    if not os.path.exists(test_image_dir):
-        os.makedirs(test_image_dir)
-        print(f"Created test image directory: {test_image_dir}")
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # Navigate out of utils to project/
+    test_image_path = os.path.abspath(os.path.join(base_dir, "data", "YOLO", "test_image", "image.jpeg"))
 
     if not os.path.exists(test_image_path):
-        with open(test_image_path, "wb") as f:
-            f.write(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xdb\x00C")  # Minimal JPEG header
-        print(f"Created placeholder test image: {test_image_path}")
+        raise FileNotFoundError(f"Test image not found at {test_image_path}. Please ensure it is included in the setup.")
 
     return test_image_path
 
@@ -82,9 +76,14 @@ def check_cuda(min_memory_gb=2):
         print("Testing YOLO GPU support...")
 
         # Load YOLO model and force it to run on GPU
-        model_path = os.path.abspath(os.path.join(os.getcwd(), "data/YOLO/test_models/yolov8n.pt"))
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))  # Navigate out of utils to project/
+        model_path = os.path.abspath(os.path.join(base_dir, "data", "YOLO", "test_models", "yolov8n.pt"))
+        
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"YOLO model not found at {model_path}. Please ensure it is included in the setup.")
+        
         yolo_model = YOLO(model_path).to("cuda")
-        test_image_path = ensure_test_image()
+        test_image_path = get_test_image_path()
 
         print(f"Using test image: {test_image_path}")
         print("Performing YOLO inference on GPU...")

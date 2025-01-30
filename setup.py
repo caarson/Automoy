@@ -9,9 +9,11 @@ with open("requirements.txt") as f:
 with open("README.md", "r", encoding="utf-8") as readme_file:
     long_description = readme_file.read()
 
-# Define model path
+# Define paths for model and test image
 model_path = "operate/data/YOLO/models"
+test_image_path = "operate/data/YOLO/test_image"
 model_file = os.path.join(model_path, "socYOLO.pt")
+test_image_file = os.path.join(test_image_path, "image.jpeg")
 
 setup(
     name="self-operating-computer",
@@ -24,15 +26,15 @@ setup(
         ],
     },
     package_data={
-        # Include model weights
-        "operate.data.YOLO.test_image": ["best.pt"],
-        "operate.data.YOLO.models": ["socYOLO.pt"],  # Explicitly add socYOLO.pt
+        # Explicitly include the test image and YOLO model
+        "operate.data.YOLO.test_image": ["image.jpeg"],
+        "operate.data.YOLO.models": ["socYOLO.pt"],
     },
     data_files=[
-        (model_path, [model_file])  # Ensure the file is copied to the right location
+        (model_path, [model_file]),  # Ensure the model file is copied to the correct location
+        (test_image_path, [test_image_file]),  # Ensure the test image is copied
     ],
     include_package_data=True,  # Ensures non-code files are included
     long_description=long_description,  # Add project description here
     long_description_content_type="text/markdown",  # Specify Markdown format
-    # include any other necessary setup options here
 )
