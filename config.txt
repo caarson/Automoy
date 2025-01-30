@@ -1,0 +1,23 @@
+####
+# API KEYS
+####
+
+OPENAI_API_KEY:
+<key goes here>
+
+LMSTUDIO_API_URL:
+<key goes here>
+
+LMSTUDIO_API_KEY:
+<key goes here>
+
+####
+# OPERATE PARAMETERS
+####
+
+DEFINE_REGION:
+<True>
+
+DEBUG:
+<True>
+
