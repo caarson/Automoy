@@ -25,7 +25,7 @@ setup(
     },
     package_data={
         # Include model weights
-        "operate.models.weights": ["best.pt"],
+        "operate.data.YOLO.test_image": ["best.pt"],
         "operate.data.YOLO.models": ["socYOLO.pt"],  # Explicitly add socYOLO.pt
     },
     data_files=[

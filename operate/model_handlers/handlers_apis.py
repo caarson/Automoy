@@ -1,6 +1,6 @@
 from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
-from openai_handler import call_openai_model
-from lmstudio_handler import call_lmstudio_model
+from operate.model_handlers.openai_handler import call_openai_model
+from operate.model_handlers.lmstudio_handler import call_lmstudio_model
 
 async def get_next_action(model, messages, objective, session_id):
     print(f"[handlers_api] Using model: {model}")

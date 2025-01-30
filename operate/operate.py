@@ -47,6 +47,8 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
     cuda_avaliable = check_cuda()
 
+    print("CUDA STATUS:" + str(cuda_avaliable))
+
     if cuda_avaliable:
         print("CUDA enabled, proceeding with startup...")
     else:
