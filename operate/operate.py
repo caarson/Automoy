@@ -59,20 +59,19 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     # Initialize `WhisperMic`, if `voice_mode` is True
 
     config.verbose = verbose_mode
-    config.validation(model)  # Fix: Removed extra argument
+    config.validation(model)
 
     # Initialize region_coords to avoid undefined variable error
     region_coords = None
 
     ## Boot Arguments:
-    # Enable define a region boot arg
     if define_region:
         import tkinter as tk
         import threading
         from operate.utils.area_selector import select_area, create_outline_window
 
         done_event = threading.Event()
-        region_coords = []  # Store the selected region coordinates
+        region_coords = []
 
         def run_gui():
             root = tk.Tk()
@@ -91,37 +90,28 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
         gui_thread = threading.Thread(target=run_gui, daemon=True)
         gui_thread.start()
 
-        done_event.wait()  # Wait for region selection
+        done_event.wait()
         print(f"Operating within region: {region_coords}")
-    # Enable voice control
+    
     if voice_mode:
         try:
             from whisper_mic import WhisperMic
-
-            # Initialize WhisperMic if import is successful
             mic = WhisperMic()
         except ImportError:
-            print(
-                "Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'"
-            )
+            print("Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'")
             sys.exit(1)
-    # Enable pass-through prompt
-    if terminal_prompt:  # Skip objective prompt if it was given as an argument
+    
+    if terminal_prompt:
         objective = terminal_prompt
-
     elif voice_mode:
-        print(
-            f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RESET} Listening for your command... (speak now)"
-        )
+        print(f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RESET} Listening for your command... (speak now)")
         try:
             objective = mic.listen()
         except Exception as e:
             print(f"{ANSI_RED}Error in capturing voice input: {e}{ANSI_RESET}")
-            return  # Exit if voice input fails
+            return
     else:
-        print(
-            f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]\n{USER_QUESTION}"
-        )
+        print(f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]\n{USER_QUESTION}")
         print(f"{ANSI_YELLOW}[User]{ANSI_RESET}")
         objective = prompt(style=style)
 
@@ -130,10 +120,8 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     messages = [system_message]
 
     loop_count = 0
-
     session_id = None
 
-    # Define screenshot path
     screenshot_path = os.path.join(os.getcwd(), "operate", "data", "screenshots", "screenshot.png")
     os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
     capture_screen_with_cursor(screenshot_path)
@@ -157,97 +145,54 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
             if loop_count > 10:
                 break
         except ModelNotRecognizedException as e:
-            print(
-                f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}"
-            )
+            print(f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}")
             break
         except Exception as e:
-            print(
-                f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}"
-            )
+            print(f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}")
             break
 
-import time
-
 def operate(operations, model, region=None):
-    # Function to check if a point is within the defined region
-    def is_within_region(x, y, region):
-        """Check if a point is within the defined region."""
-        x1, y1, x2, y2 = region
-        return x1 <= x <= x2 and y1 <= y <= y2
-
     if config.verbose:
         print("[Self Operating Computer][operate] Starting operations")
 
-    # Print the received operations before processing
-    print(f"[DEBUG] Operations received: {operations}")  # Print operations list
-    print(f"[DEBUG] Type of operations: {type(operations)}")  # Check if it's NoneType
+    print(f"[DEBUG] Operations received: {operations}")
+    print(f"[DEBUG] Type of operations: {type(operations)}")
 
-    # Ensure operations is iterable before looping
-    if operations is None:
-        print(f"{ANSI_RED}[Error] Operations list is None. Exiting operation processing.{ANSI_RESET}")
-        return True  # Stop execution to prevent errors
+    if not operations:
+        print(f"{ANSI_RED}[Error] Operations list is empty or None. Exiting operation processing.{ANSI_RESET}")
+        return True
 
-    # Now with smart operations within regions.
     for operation in operations:
-        if config.verbose:
-            print("[Self Operating Computer][operate] Processing operation", operation)
-        
-        time.sleep(1)  # Delay for demonstration purposes
-        operate_type = operation.get("action", "").lower()
+        if not isinstance(operation, dict) or "operation" not in operation:
+            print(f"{ANSI_RED}[Error] Operation type is missing in {operation}.{ANSI_RESET}")
+            continue
+
+        operate_type = operation["operation"].lower()
         operate_detail = ""
-        
+
         if config.verbose:
             print("[Self Operating Computer][operate] Operation type:", operate_type)
 
-        # Check if operation coordinates are within the defined region, if region is specified
-        if region:
-            x = operation.get("x", 0)
-            y = operation.get("y", 0)
-            if not is_within_region(x, y, region):
-                print(f"Operation at ({x}, {y}) is outside the defined region and will be skipped.")
-                continue  # Skip this operation as it's outside the defined region
-
-        if operate_type == "press" or operate_type == "hotkey":
+        if operate_type == "press":
             keys = operation.get("keys")
             operate_detail = f"keys: {keys}"
-            # Press/hotkey operations don’t have coordinates, so they can always run.
             operating_system.press(keys)
         elif operate_type == "write":
-            content = operation.get("content")
+            content = operation.get("text")
             operate_detail = f"content: '{content}'"
-            
-            # Writing might require cursor positioning – ensure it's inside the region.
-            x = operation.get("x", 0)  # Assume default position if not specified
-            y = operation.get("y", 0)
-            
-            if not region or is_within_region(x, y, region):
-                # Get current cursor position to ensure it starts within the region
-                current_x, current_y = pyautogui.position()
-                if is_within_region(current_x, current_y, region):
-                    operating_system.write(content)
-                else:
-                    print(f"Write operation aborted because the cursor is outside the region ({current_x}, {current_y}).")
-            else:
-                print(f"Write action at ({x}, {y}) skipped (out of bounds).")
+            operating_system.write(content)
         elif operate_type == "click":
-            x = operation.get("x")
-            y = operation.get("y")
-            operate_detail = f"click at ({x}, {y})"
-            # Check if the click is within the defined region
-            if not region or is_within_region(x, y, region):
-                operating_system.mouse({"x": x, "y": y})
-            else:
-                print(f"Click at ({x}, {y}) skipped (out of bounds).")
+            text = operation.get("text", "")
+            operate_detail = f"click on {text}"
+            operating_system.click(text)
         elif operate_type == "done":
             summary = operation.get("summary")
             print(f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")
-            return True  # Stop operation when done
+            return True
         else:
             print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RED} Error: unknown operation response{ANSI_RESET} {operation}")
-            return True  # Stop operation on error
+            return True
 
-        # Print operation details
-        print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RESET} | {ANSI_BRIGHT_MAGENTA}{model}{ANSI_RESET}] Thought: {operate_thought}, Action: {ANSI_BLUE}{operate_type}{ANSI_RESET} {operate_detail}\n")
-
-    return False  # Continue if not done
+        print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RESET} | {ANSI_BRIGHT_MAGENTA}{model}{ANSI_RESET}] Action: {ANSI_BLUE}{operate_type}{ANSI_RESET} {operate_detail}\n")
+    
+    return False

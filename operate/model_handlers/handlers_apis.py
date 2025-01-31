@@ -7,6 +7,7 @@ async def get_next_action(model, messages, objective, session_id, screenshot_pat
 
     # Perform preprocessing with OCR and YOLO, passing the screenshot path
     combined_results = await preprocess_with_ocr_and_yolo(screenshot_path)
+    print(f"[DEBUG] Preprocessing Results: {combined_results}")
 
     # Add preprocessing results to messages
     messages.append({
@@ -18,9 +19,14 @@ async def get_next_action(model, messages, objective, session_id, screenshot_pat
     if model.startswith("gpt") or "openai" in model:
         if model == "gpt-4-with-ocr-and-yolo":
             model = "gpt-4"
-            return await call_openai_model(messages, objective, model), None
+            response = await call_openai_model(messages, objective, model)
+            print(f"[DEBUG] OpenAI Response: {response}")
+            return response, None  # Ensure this is returning a valid operations list
 
     if model.startswith("lmstudio"):
-        return await call_lmstudio_model(messages, objective, model), None
+        response = await call_lmstudio_model(messages, objective, model)
+        print(f"[DEBUG] LMStudio Response: {response}")
+        return response, None
 
     raise ModelNotRecognizedException(f"Model '{model}' not recognized.")
+
