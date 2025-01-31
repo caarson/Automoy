@@ -70,10 +70,31 @@ def transform_operations(response_list):
 async def call_openai_model(messages, objective, model_name="gpt-4o"):
     """
     Calls OpenAI's GPT-based models and ensures JSON is formatted correctly.
+    Directly truncates preprocessed data without additional parsing.
     """
     try:
-        messages = truncate_messages(messages, max_tokens=7000, model_name=model_name)
+        # Log the input being sent to GPT
+        print(f"[DEBUG] Messages Sent to GPT Before Modification:\n{json.dumps(messages, indent=2)}")
+
+        # Directly truncate preprocessed data
+        preprocessed_data = messages[-1]["content"] if messages and "content" in messages[-1] else ""
+
+        # Truncate the preprocessed data before adding it to messages
+        def truncate_text(text, max_tokens=2000, model_name="gpt-4o"):
+            enc = tiktoken.encoding_for_model(model_name)
+            tokenized = enc.encode(text)
+            return enc.decode(tokenized[:max_tokens]) if len(tokenized) > max_tokens else text
+
+        preprocessed_data = truncate_text(preprocessed_data, max_tokens=2000)
+
+        # Ensure preprocessed data does not exceed the limit before sending
+        truncated_data = truncate_messages([{"role": "system", "content": preprocessed_data}], max_tokens=6000, model_name=model_name)
         
+        messages = messages[:-1] + truncated_data
+
+        print(f"[DEBUG] Messages Sent to GPT After Modification:\n{json.dumps(messages, indent=2)}")
+
+        # Initialize OpenAI client and make the request
         client = config.initialize_openai()
         response = client.chat.completions.create(
             model=model_name,
@@ -87,14 +108,15 @@ async def call_openai_model(messages, objective, model_name="gpt-4o"):
             return []
 
         content = response.choices[0].message.content
-        
+
+        # Log the raw response from GPT
+        print(f"[DEBUG] Raw GPT Response:\n{content}")
+
         try:
             parsed_response = json.loads(content)
         except json.JSONDecodeError as e:
             print(f"[ERROR] JSON Decode Error: {e}")
             return []
-        
-        print(f"[DEBUG] OpenAI Raw Response: {content}")
 
         parsed_response = fix_json_format(content)
         formatted_response = transform_operations(parsed_response)

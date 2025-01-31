@@ -6,7 +6,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, "..", ".."))
 sys.path.insert(0, project_root)
 
-from operate.utils.ocr import perform_easyocr as perform_ocr  # Ensure the correct function name is used
+from operate.utils.ocr import perform_easyocr as perform_ocr
 from operate.utils.yolo import YOLODetector
 from operate.utils.screenshot import capture_screen_with_cursor
 
@@ -19,7 +19,7 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
     Args:
         screenshot_path (str): Path to the screenshot for processing.
     Returns:
-        dict: Results containing simplified combined results and raw OCR/YOLO outputs.
+        dict: Simplified matched, OCR, and YOLO results with only necessary content and coordinates.
     """
     print("[preprocessing] Performing OCR and YOLO preprocessing...")
 
@@ -32,57 +32,40 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
     print(f"[preprocessing] YOLO Results: {yolo_results}")
 
     # Combine OCR and YOLO results based on overlapping coordinates
-    combined_results = []
+    matched_results = []
     for yolo_obj in yolo_results:
         yolo_x, yolo_y = yolo_obj["x"], yolo_obj["y"]
         matched = False
         for ocr_obj in ocr_results:
-            polygon, text, confidence = ocr_obj[0], ocr_obj[1], ocr_obj[2]  # Adjusted format to handle tuple indexing
+            polygon, text = ocr_obj[0], ocr_obj[1]
             
-            # Match YOLO and OCR results if the coordinates are similar
+            # Match YOLO and OCR results if coordinates are similar
             if any(
-                abs(p[0] / 1920 - yolo_x) < 0.1 and abs(p[1] / 1080 - yolo_y) < 0.1  # Normalize for screen resolution
+                abs(p[0] / 1920 - yolo_x) < 0.1 and abs(p[1] / 1080 - yolo_y) < 0.1
                 for p in polygon
             ):
-                combined_results.append({
-                    "label": yolo_obj["label"],
-                    "confidence": yolo_obj["confidence"],
-                    "text": text,
-                    "ocr_confidence": confidence,
-                    "coordinates": {"x": yolo_x, "y": yolo_y},
-                    "matched": True
-                })
+                if text:
+                    matched_results.append(f"text,{text},{yolo_x} {yolo_y}")
+                else:
+                    matched_results.append(f"{yolo_obj['label']},{yolo_x} {yolo_y}")
                 matched = True
                 break  # Stop checking other OCR polygons for this YOLO object
     
         if not matched:
-            combined_results.append({
-                "label": yolo_obj["label"],
-                "confidence": yolo_obj["confidence"],
-                "text": None,
-                "ocr_confidence": None,
-                "coordinates": {"x": yolo_x, "y": yolo_y},
-                "matched": False
-            })
+            matched_results.append(f"{yolo_obj['label']},{yolo_x} {yolo_y}")
 
-    # Simplify results for display
-    simplified_results = [
-        {
-            "Text": result.get("text", "N/A"),
-            "Label": result.get("label", "N/A"),
-            "Confidence": result.get("confidence", 0),
-            "OCR Confidence": result.get("ocr_confidence", 0),
-            "Coordinates": result.get("coordinates", {}),
-            "Matched": result.get("matched", False)
-        }
-        for result in combined_results
-    ]
+    # Simplified OCR and YOLO results
+    ocr_simplified = [f"text,{obj[1]},{obj[0][0][0]} {obj[0][0][1]}" for obj in ocr_results if obj[1]]
+    yolo_simplified = [f"{obj['label']},{obj['x']} {obj['y']}" for obj in yolo_results]
 
-    print(f"[preprocessing] Combined Results (Simplified): {simplified_results}")
+    print(f"[preprocessing] Matched Results: {matched_results}")
+    print(f"[preprocessing] OCR Results: {ocr_simplified}")
+    print(f"[preprocessing] YOLO Results: {yolo_simplified}")
+    
     return {
-        "simplified_results": simplified_results,
-        "raw_ocr_results": ocr_results,
-        "raw_yolo_results": yolo_results
+        "matched_results": matched_results,
+        "ocr_results": ocr_simplified,
+        "yolo_results": yolo_simplified
     }
 
 # Main script
@@ -104,8 +87,7 @@ if __name__ == "__main__":
             print(f"[preprocessing] Screenshot saved to: {screenshot_path}")
             results = await preprocess_with_ocr_and_yolo(screenshot_path)
             print("[preprocessing] Final Results:")
-            for result in results["simplified_results"]:
-                print(result)
+            print(results)
         else:
             print(f"[ERROR] Screenshot not found at {screenshot_path}.")
 

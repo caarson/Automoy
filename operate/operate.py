@@ -31,7 +31,7 @@ operating_system = OperatingSystem()
 
 def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_region=False):
     """
-    Main function for the Self-Operating Computer.
+    Main function for the Automoy.
 
     Parameters:
     - model: The model used for generating responses.
@@ -104,14 +104,14 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     if terminal_prompt:
         objective = terminal_prompt
     elif voice_mode:
-        print(f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RESET} Listening for your command... (speak now)")
+        print(f"{ANSI_GREEN}[Automoy]{ANSI_RESET} Listening for your command... (speak now)")
         try:
             objective = mic.listen()
         except Exception as e:
             print(f"{ANSI_RED}Error in capturing voice input: {e}{ANSI_RESET}")
             return
     else:
-        print(f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]\n{USER_QUESTION}")
+        print(f"[{ANSI_GREEN}Automoy {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]\n{USER_QUESTION}")
         print(f"{ANSI_YELLOW}[User]{ANSI_RESET}")
         objective = prompt(style=style)
 
@@ -128,7 +128,7 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
     while True:
         if config.verbose:
-            print("[Self Operating Computer] loop_count", loop_count)
+            print("[Automoy] loop_count", loop_count)
         try:
             result = asyncio.run(get_next_action(model, messages, terminal_prompt, session_id, screenshot_path))
             if result is None:
@@ -145,15 +145,15 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
             if loop_count > 10:
                 break
         except ModelNotRecognizedException as e:
-            print(f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}")
+            print(f"{ANSI_GREEN}[Automoy]{ANSI_RED}[Error] -> {e} {ANSI_RESET}")
             break
         except Exception as e:
-            print(f"{ANSI_GREEN}[Self-Operating Computer]{ANSI_RED}[Error] -> {e} {ANSI_RESET}")
+            print(f"{ANSI_GREEN}[Automoy]{ANSI_RED}[Error] -> {e} {ANSI_RESET}")
             break
 
 def operate(operations, model, region=None):
     if config.verbose:
-        print("[Self Operating Computer][operate] Starting operations")
+        print("[Automoy][operate] Starting operations")
 
     print(f"[DEBUG] Operations received: {operations}")
     print(f"[DEBUG] Type of operations: {type(operations)}")
@@ -171,28 +171,31 @@ def operate(operations, model, region=None):
         operate_detail = ""
 
         if config.verbose:
-            print("[Self Operating Computer][operate] Operation type:", operate_type)
+            print("[Automoy][operate] Operation type:", operate_type)
 
-        if operate_type == "press":
-            keys = operation.get("keys")
-            operate_detail = f"keys: {keys}"
-            operating_system.press(keys)
-        elif operate_type == "write":
-            content = operation.get("text")
-            operate_detail = f"content: '{content}'"
-            operating_system.write(content)
-        elif operate_type == "click":
-            text = operation.get("text", "")
-            operate_detail = f"click on {text}"
-            operating_system.click(text)
-        elif operate_type == "done":
-            summary = operation.get("summary")
-            print(f"[{ANSI_GREEN}Self-Operating Computer {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")
-            return True
-        else:
-            print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RED} Error: unknown operation response{ANSI_RESET} {operation}")
-            return True
+        try:
+            if operate_type == "press":
+                keys = operation.get("keys")
+                operate_detail = f"keys: {keys}"
+                operating_system.press(keys)
+            elif operate_type == "write":
+                content = operation.get("text", "")
+                operate_detail = f"content: '{content}'"
+                operating_system.write(content)
+            elif operate_type == "click":
+                text = operation.get("text", "")
+                operate_detail = f"click on {text}"
+                operating_system.click(text)
+            elif operate_type == "done":
+                summary = operation.get("summary", "Objective complete.")
+                print(f"[{ANSI_GREEN}Automoy {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")
+                return True
+            else:
+                print(f"{ANSI_RED}[Error] Unknown operation type: {operate_type}.{ANSI_RESET}")
+                return True
 
-        print(f"[{ANSI_GREEN}Self-Operating Computer{ANSI_RESET} | {ANSI_BRIGHT_MAGENTA}{model}{ANSI_RESET}] Action: {ANSI_BLUE}{operate_type}{ANSI_RESET} {operate_detail}\n")
-    
+            print(f"[{ANSI_GREEN}Automoy{ANSI_RESET} | {ANSI_BRIGHT_MAGENTA}{model}{ANSI_RESET}] Action: {ANSI_BLUE}{operate_type}{ANSI_RESET} {operate_detail}\n")
+        except Exception as e:
+            print(f"{ANSI_RED}[Error] Failed to execute operation: {operate_type}, Detail: {operate_detail}, Error: {e}{ANSI_RESET}")
+
     return False

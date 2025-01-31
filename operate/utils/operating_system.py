@@ -5,25 +5,29 @@ import math
 
 from operate.utils.misc import convert_percent_to_decimal
 
-
 class OperatingSystem:
     def write(self, content):
         try:
+            if not content:
+                print("[OperatingSystem][write] No content provided to write.")
+                return
             content = content.replace("\\n", "\n")
-            for char in content:
-                pyautogui.write(char)
+            pyautogui.write(content)
         except Exception as e:
-            print("[OperatingSystem][write] error:", e)
+            print("[OperatingSystem][write] Error:", e)
 
     def press(self, keys):
         try:
+            if not keys or not isinstance(keys, list):
+                print("[OperatingSystem][press] Invalid keys provided:", keys)
+                return
             for key in keys:
                 pyautogui.keyDown(key)
             time.sleep(0.1)
             for key in keys:
                 pyautogui.keyUp(key)
         except Exception as e:
-            print("[OperatingSystem][press] error:", e)
+            print("[OperatingSystem][press] Error:", e)
 
     def mouse(self, click_detail, region=None):
         try:
@@ -44,7 +48,7 @@ class OperatingSystem:
             pyautogui.click(x_pixel, y_pixel)
 
         except Exception as e:
-            print("[OperatingSystem][mouse] error:", e)
+            print("[OperatingSystem][mouse] Error:", e)
 
     def click_at_percentage(
         self,
@@ -70,4 +74,4 @@ class OperatingSystem:
 
             pyautogui.click(x_pixel, y_pixel)
         except Exception as e:
-            print("[OperatingSystem][click_at_percentage] error:", e)
+            print("[OperatingSystem][click_at_percentage] Error:", e)

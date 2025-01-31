@@ -20,8 +20,11 @@ async def get_next_action(model, messages, objective, session_id, screenshot_pat
         if model == "gpt-4-with-ocr-and-yolo":
             model = "gpt-4"
             response = await call_openai_model(messages, objective, model)
+            if not isinstance(response, list):
+                print(f"[ERROR] OpenAI response is not a list: {response}")
+                return [], None
             print(f"[DEBUG] OpenAI Response: {response}")
-            return response, None  # Ensure this is returning a valid operations list
+            return response, None
 
     if model.startswith("lmstudio"):
         response = await call_lmstudio_model(messages, objective, model)
@@ -29,4 +32,3 @@ async def get_next_action(model, messages, objective, session_id, screenshot_pat
         return response, None
 
     raise ModelNotRecognizedException(f"Model '{model}' not recognized.")
-
