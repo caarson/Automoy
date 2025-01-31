@@ -179,13 +179,22 @@ def operate(operations, model, region=None):
     if config.verbose:
         print("[Self Operating Computer][operate] Starting operations")
 
+    # Print the received operations before processing
+    print(f"[DEBUG] Operations received: {operations}")  # Print operations list
+    print(f"[DEBUG] Type of operations: {type(operations)}")  # Check if it's NoneType
+
+    # Ensure operations is iterable before looping
+    if operations is None:
+        print(f"{ANSI_RED}[Error] Operations list is None. Exiting operation processing.{ANSI_RESET}")
+        return True  # Stop execution to prevent errors
+
     # Now with smart operations within regions.
     for operation in operations:
         if config.verbose:
             print("[Self Operating Computer][operate] Processing operation", operation)
         
         time.sleep(1)  # Delay for demonstration purposes
-        operate_type = operation.get("operation").lower()
+        operate_type = operation.get("action", "").lower()
         operate_detail = ""
         
         if config.verbose:
