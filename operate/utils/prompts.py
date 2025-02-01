@@ -15,12 +15,12 @@ A custom prompt
 """
 
 ###############################################################################
-# # SYSTEM_PROMPT_OCR_YOLO - EXTREMELY ROBUST AND LENGTHY - DO NOT TOUCH!
+# SYSTEM_PROMPT_OCR_YOLO - EXTREMELY ROBUST AND LENGTHY - DO NOT TOUCH!
 ###############################################################################
 SYSTEM_PROMPT_OCR_YOLO = """
 Above is OCR and YOLO information for your use while completing the objective below!
 
-**To interpet this data you must know** each item is formatted by; {Type, Contents (if applicable), Coordinates}!
+**To interpret this data you must know** each item is formatted by: {{ "Type": "value", "Contents": "value", "Coordinates": "X, Y" }}
 Type: The item's object identifier.
 Contents: The item's object data (ex: the text) (will not be there if no associated data)
 Coordinates: The item's X Y location on the screen.
@@ -67,20 +67,17 @@ Coordinates: The item's X Y location on the screen.
 
 ### **RULES**
 ✅ **Every action must contain "operation".**
-✅ **Only use `click`.**
-✅ **If clicking is unreliable, use `press` or `write`.**
+✅ **Only use `click`, `press`, or `write` where applicable.**
 ✅ **Ensure valid JSON structure.**
 ✅ **Every string value (e.g., URLs, text) must be enclosed in double quotes ("").**
 ✅ **Ensure the response is a valid JSON array!**
 ✅ **Use `done` when the task is fully complete!**
-✅ **You must use OCR and YOLO provided information give to you to evaluate whether your task is complete.
-✅ **You must use OCR and YOLO provided information interact with the system.
-
+✅ **You must use OCR and YOLO provided information to evaluate whether your task is complete.**
+✅ **You must use OCR and YOLO provided information to interact with the system.**
 
 ### **ADDITIONAL CONTEXTUAL INFORMATION**
-✅ **You are on a {operating_system} operating system.
-✅ **Anything you want to do, like searching on the internet, you must open the application itself before performing any application specific operations!
-
+✅ **You are on a {operating_system} operating system.**
+✅ **Anything you want to do, like searching on the internet, you must open the application itself before performing any application-specific operations!**
 
 Most importantly, your objective is: {objective}
 
@@ -103,19 +100,22 @@ def get_system_prompt(model, objective):
 
     try:
         use_custom_prompt = False # May change later
-        if use_custom_prompt == True:
+        if use_custom_prompt:
             prompt = SYSTEM_PROMPT_CUSTOM.format(
                 operating_system=operating_system,
                 objective=objective
             )
         else:
+            required_keys = ["operation"]
             prompt = SYSTEM_PROMPT_OCR_YOLO.format(
                 operating_system=operating_system,
                 objective=objective
-
             )
+            for key in required_keys:
+                if f'{{{key}}}' in prompt:
+                    raise KeyError(f"Missing required key in prompt formatting: {key}")
     except KeyError as e:
-        raise KeyError(f"Missing required key in prompt formatting: {str(e)}")
+        raise KeyError(f"The required key {str(e)} is missing in the prompt formatting. Ensure that every action includes an 'operation' field.")
 
     if config.verbose:
         print("[get_system_prompt] model:", model)

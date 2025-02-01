@@ -45,18 +45,24 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
                 for p in polygon
             ):
                 if text:
-                    matched_results.append(f"text,{text},{yolo_x} {yolo_y}")
+                    matched_results.append(f"{{text, {text}, {yolo_x} {yolo_y}}}")
                 else:
-                    matched_results.append(f"{yolo_obj['label']},{yolo_x} {yolo_y}")
+                    matched_results.append(f"{{button, {yolo_x} {yolo_y}}}")
                 matched = True
                 break  # Stop checking other OCR polygons for this YOLO object
     
         if not matched:
-            matched_results.append(f"{yolo_obj['label']},{yolo_x} {yolo_y}")
+            matched_results.append(f"{{button, {yolo_x} {yolo_y}}}")
 
     # Simplified OCR and YOLO results
-    ocr_simplified = [f"text,{obj[1]},{obj[0][0][0]} {obj[0][0][1]}" for obj in ocr_results if obj[1]]
-    yolo_simplified = [f"{obj['label']},{obj['x']} {obj['y']}" for obj in yolo_results]
+    ocr_simplified = [
+        f"{{text, {obj[1]}, {obj[0][0][0]} {obj[0][0][1]}}}" if obj[1] else f"{{button, {obj[0][0][0]} {obj[0][0][1]}}}"
+        for obj in ocr_results
+    ]
+    yolo_simplified = [
+        f"{{button, {obj['x']} {obj['y']}}}"
+        for obj in yolo_results
+    ]
 
     print(f"[preprocessing] Matched Results: {matched_results}")
     print(f"[preprocessing] OCR Results: {ocr_simplified}")
