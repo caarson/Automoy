@@ -27,7 +27,7 @@ async def get_next_action(model, messages, objective, session_id, screenshot_pat
             return response, None
 
     if model.startswith("lmstudio"):
-        response = await call_lmstudio_model(messages, objective, model)
+        response = await call_lmstudio_model(messages, objective, model.split(",")[1])
         print(f"[DEBUG] LMStudio Response: {response}")
         return response, None
 

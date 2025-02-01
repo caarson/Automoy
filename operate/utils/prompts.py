@@ -77,7 +77,7 @@ Coordinates: The item's X Y location on the screen.
 
 ### **ADDITIONAL CONTEXTUAL INFORMATION**
 ✅ **You are on a {operating_system} operating system.**
-✅ **Anything you want to do, like searching on the internet, you must open the application itself before performing any application-specific operations!**
+✅ **IMPORTANT: Anything you want to do, like searching on the internet, you must open the application itself before performing any application-specific operations!**
 
 Most importantly, your objective is: {objective}
 

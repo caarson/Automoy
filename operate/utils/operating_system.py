@@ -5,6 +5,8 @@ import math
 
 from operate.utils.misc import convert_percent_to_decimal
 
+pyautogui.FAILSAFE = False
+
 class OperatingSystem:
     def write(self, content):
         try:
@@ -49,6 +51,53 @@ class OperatingSystem:
 
         except Exception as e:
             print("[OperatingSystem][mouse] Error:", e)
+
+    def click(self, operation):
+        """
+        Handles the `click` operation. Supports both `text` and `location` based clicks.
+        """
+        try:
+            # Check for `location` in the operation
+            if "location" in operation:
+                location = operation["location"]
+
+                # Handle both comma-separated and space-separated coordinates
+                if ',' in location:
+                    x_percentage, y_percentage = map(float, location.split(','))
+                else:
+                    x_percentage, y_percentage = map(float, location.split())
+
+                # Ensure percentages are within bounds
+                x_percentage = max(0, min(x_percentage, 1))
+                y_percentage = max(0, min(y_percentage, 1))
+
+                # Debug: Log adjusted percentages
+                print(f"[DEBUG] Adjusted location: {x_percentage}, {y_percentage}")
+
+                screen_width, screen_height = pyautogui.size()
+                x_pixel = int(screen_width * x_percentage)
+                y_pixel = int(screen_height * y_percentage)
+
+                # Debug: Log calculated pixel position
+                print(f"[DEBUG] Pixel position: {x_pixel}, {y_pixel}")
+
+                print(f"[OperatingSystem][click] Clicking at ({x_pixel}, {y_pixel}) based on location percentage.")
+                pyautogui.click(x_pixel, y_pixel)
+
+            elif "text" in operation:
+                text = operation.get("text", "")
+                if not text:
+                    print("[OperatingSystem][click] No text provided for click operation.")
+                    return
+                print(f"Simulating a click action for text: {text}")
+            else:
+                print("[OperatingSystem][click] Invalid operation: No `location` or `text` provided.")
+        except pyautogui.FailSafeException:
+            # Handle PyAutoGUI fail-safe exception
+            print("[OperatingSystem][click] PyAutoGUI fail-safe triggered. Mouse moved to a corner of the screen.")
+        except Exception as e:
+            # Handle other exceptions
+            print("[OperatingSystem][click] Error:", e)
 
     def click_at_percentage(
         self,

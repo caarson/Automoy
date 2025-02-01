@@ -183,9 +183,8 @@ def operate(operations, model, region=None):
                 operate_detail = f"content: '{content}'"
                 operating_system.write(content)
             elif operate_type == "click":
-                text = operation.get("text", "")
-                operate_detail = f"click on {text}"
-                operating_system.click(text)
+                operate_detail = f"click on {operation.get('text', operation.get('location', ''))}"
+                operating_system.click(operation)
             elif operate_type == "done":
                 summary = operation.get("summary", "Objective complete.")
                 print(f"[{ANSI_GREEN}Automoy {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")
