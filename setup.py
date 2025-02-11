@@ -29,6 +29,7 @@ setup(
         # Explicitly include the test image and YOLO model
         "operate.data.YOLO.test_image": ["image.jpeg"],
         "operate.data.YOLO.models": ["socYOLO.pt"],
+        "operate": ["config.txt"],
     },
     data_files=[
         (model_path, [model_file]),  # Ensure the model file is copied to the correct location

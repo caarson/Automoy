@@ -1,22 +1,26 @@
 import os
 import requests
 import asyncio
-from config import Config
+from operate.config import Config  # Corrected import path
 
 async def call_lmstudio_model(messages, objective, model):
     config = Config()
-    api_url = config.lmstudio_api_url  # Use the configured LMStudio URL
-    
-    if not api_url:
-        raise RuntimeError("LMStudio API URL is not set in config.txt")
-    
+    api_source, api_value = config.get_api_source()  # Get the proper API source
+
+    if api_source == "lmstudio":
+        api_url = api_value  # Use LMStudio API URL
+    elif api_source == "openai":
+        raise RuntimeError("LMStudio API is not available, and OpenAI API is not implemented in this function.")
+    else:
+        raise RuntimeError("No valid API source found.")
+
     headers = {"Content-Type": "application/json"}
     prompt = f"{objective}\n\n" + "\n".join(msg["content"] for msg in messages)
 
     payload = {
         "model": model,
         "prompt": prompt,
-        "max_tokens": 500,  # Limit tokens
+        "max_tokens": 500,
         "temperature": 0.7,
         "top_p": 0.9,
     }

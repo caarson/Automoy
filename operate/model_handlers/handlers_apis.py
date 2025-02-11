@@ -1,6 +1,7 @@
 from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
 from operate.model_handlers.openai_handler import call_openai_model
 from operate.model_handlers.lmstudio_handler import call_lmstudio_model
+from operate.exceptions import ModelNotRecognizedException
 
 async def get_next_action(model, messages, objective, session_id, screenshot_path):
     print(f"[handlers_api] Using model: {model}")
