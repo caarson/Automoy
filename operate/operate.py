@@ -29,18 +29,30 @@ from operate.utils.screenshot import capture_screen_with_cursor
 config = Config()
 operating_system = OperatingSystem()
 
-def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_region=False):
+
+def main(model=None, terminal_prompt=None, voice_mode=False, verbose_mode=False, define_region=False):
     """
     Main function for the Automoy.
 
+    It reads from the config.txt (via the Config class) to determine default
+    MODEL, DEFINE_REGION, and DEBUG settings, then uses any function arguments
+    if provided.
+
     Parameters:
-    - model: The model used for generating responses.
+    - model: The model used for generating responses. Defaults to config.txt's MODEL if None.
     - terminal_prompt: A string representing the prompt provided in the terminal.
     - voice_mode: A boolean indicating whether to enable voice mode.
+    - verbose_mode: A boolean indicating whether to run in verbose (debug) mode.
+    - define_region: A boolean indicating whether to enable the region selection.
 
     Returns:
     None
     """
+
+    # Gather relevant fields from config.txt, overriding with function args if provided.
+    chosen_model = model or config.model  # from config.txt's MODEL
+    chosen_define_region = define_region or config.define_region  # from config.txt's DEFINE_REGION
+    chosen_verbose_mode = verbose_mode or config.debug  # from config.txt's DEBUG
 
     # Check whether or not CUDA is enabled
     from operate.utils.check_cuda import check_cuda
@@ -58,14 +70,14 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
     mic = None
     # Initialize `WhisperMic`, if `voice_mode` is True
 
-    config.verbose = verbose_mode
-    config.validation(model)
+    config.verbose = chosen_verbose_mode
+    config.validation(chosen_model)
 
     # Initialize region_coords to avoid undefined variable error
     region_coords = None
 
-    ## Boot Arguments:
-    if define_region:
+    # If define_region is True, we start the region selection process.
+    if chosen_define_region:
         import tkinter as tk
         import threading
         from operate.utils.area_selector import select_area, create_outline_window
@@ -92,7 +104,8 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
 
         done_event.wait()
         print(f"Operating within region: {region_coords}")
-    
+
+    # If using voice mode, set up WhisperMic
     if voice_mode:
         try:
             from whisper_mic import WhisperMic
@@ -100,7 +113,8 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
         except ImportError:
             print("Voice mode requires the 'whisper_mic' module. Please install it using 'pip install -r requirements-audio.txt'")
             sys.exit(1)
-    
+
+    # Decide on objective, from either terminal prompt or voice or user text input.
     if terminal_prompt:
         objective = terminal_prompt
     elif voice_mode:
@@ -111,33 +125,36 @@ def main(model, terminal_prompt, voice_mode=False, verbose_mode=False, define_re
             print(f"{ANSI_RED}Error in capturing voice input: {e}{ANSI_RESET}")
             return
     else:
-        print(f"[{ANSI_GREEN}Automoy {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}]\n{USER_QUESTION}")
+        print(f"[{ANSI_GREEN}Automoy {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {chosen_model}{ANSI_RESET}]\n{USER_QUESTION}")
         print(f"{ANSI_YELLOW}[User]{ANSI_RESET}")
         objective = prompt(style=style)
 
-    system_prompt = get_system_prompt(model, objective)
+    # Build system prompt and messages
+    system_prompt = get_system_prompt(chosen_model, objective)
     system_message = {"role": "system", "content": system_prompt}
     messages = [system_message]
 
     loop_count = 0
     session_id = None
 
+    # Prepare to capture screenshot
     screenshot_path = os.path.join(os.getcwd(), "operate", "data", "screenshots", "screenshot.png")
     os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
     capture_screen_with_cursor(screenshot_path)
 
+    # Main loop
     while True:
         if config.verbose:
             print("[Automoy] loop_count", loop_count)
         try:
-            result = asyncio.run(get_next_action(model, messages, terminal_prompt, session_id, screenshot_path))
+            result = asyncio.run(get_next_action(chosen_model, messages, terminal_prompt, session_id, screenshot_path))
             if result is None:
                 print(f"{ANSI_RED}[Error] get_next_action returned None.{ANSI_RESET}")
                 break
-            
+
             operations, session_id = result if isinstance(result, tuple) else ([], None)
-            
-            stop = operate(operations, model, region=region_coords)
+
+            stop = operate(operations, chosen_model, region=region_coords)
             if stop:
                 break
 
@@ -183,8 +200,9 @@ def operate(operations, model, region=None):
                 operate_detail = f"content: '{content}'"
                 operating_system.write(content)
             elif operate_type == "click":
-                operate_detail = f"click on {operation.get('text', operation.get('location', ''))}"
-                operating_system.click(operation)
+                text = operation.get("text", "")
+                operate_detail = f"click on {text}"
+                operating_system.click(text)
             elif operate_type == "done":
                 summary = operation.get("summary", "Objective complete.")
                 print(f"[{ANSI_GREEN}Automoy {ANSI_RESET}|{ANSI_BRIGHT_MAGENTA} {model}{ANSI_RESET}] Objective Complete: {ANSI_BLUE}{summary}{ANSI_RESET}\n")

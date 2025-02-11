@@ -1,147 +1,127 @@
 import os
-import sys
-from dotenv import load_dotenv
-from openai import OpenAI
-from prompt_toolkit.shortcuts import input_dialog
-import requests  # For testing Ollama API
-import subprocess
-
 
 class Config:
     """
-    Configuration class for managing settings.
+    Configuration class for managing settings from a config.txt file.
 
-    Attributes:
-        verbose (bool): Flag indicating whether verbose mode is enabled.
-        openai_api_key (str): API key for OpenAI.
+    By default, this expects config.txt to be in the parent directory of
+    the current script's folder (where 'operate' is located). Adjust paths
+    as needed.
+
+    Expected config.txt contents:
+    ####
+    # APIs
+    ####
+
+    OPENAI_API_KEY:
+    <key goes here>
+
+    LMSTUDIO_API_URL:
+    <http://127.0.0.1:1234>
+
+    ####
+    # OPERATE PARAMETERS
+    ####
+
+    MODEL:
+    <deepseek-r1-distill-qwen-7b>
+
+    DEFINE_REGION:
+    <True>
+
+    DEBUG:
+    <True>
+
+    Usage:
+      config = Config()      # will read ../config.txt by default
+      config.validation(...) # optional: run checks on your chosen model
     """
 
     _instance = None
 
     def __new__(cls):
+        # Implement a singleton pattern (only one Config object).
         if cls._instance is None:
             cls._instance = super(Config, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self):
-        load_dotenv()  # Load environment variables from .env
-        self.verbose = False
-        self.openai_api_key = None  # Backup if .env is not set
-        self.deepseek_api_key = None  # Placeholder for DeepSeek if needed
-        self.ollama_url = "http://localhost:11434/api/generate"  # Ollama's default local API URL
+    def __init__(self, config_path: str = None):
+        # Prevent re-initializing if we've already done so.
+        if getattr(self, "_initialized", False):
+            return
 
-    # ---------------------
-    # OpenAI Initialization
-    # ---------------------
-    def initialize_openai(self):
-        """
-        Initializes OpenAI client with API key.
-        """
-        if self.verbose:
-            print("[Config][initialize_openai]")
-
-        if self.openai_api_key:
-            if self.verbose:
-                print("[Config][initialize_openai] using cached openai_api_key")
-            api_key = self.openai_api_key
+        # If config_path is None, assume it's in the parent directory of this file's folder.
+        if config_path is None:
+            current_dir = os.path.dirname(__file__)
+            self.config_path = os.path.join(current_dir, '..', 'config.txt')
         else:
-            api_key = os.getenv("OPENAI_API_KEY")
+            self.config_path = config_path
 
-        if not api_key:
-            self.prompt_and_save_api_key("OPENAI_API_KEY", "OpenAI API key")
-            api_key = self.openai_api_key
+        self._initialized = False
 
-        client = OpenAI(api_key=api_key)
-        client.api_key = api_key
-        return client
+        # Default attributes (will be overwritten if present in config.txt).
+        self.openai_api_key = None
+        self.lmstudio_api_url = None
+        self.model = None
+        self.define_region = False
+        self.debug = False
 
-    # ---------------------
-    # Ollama Initialization
-    # ---------------------
-    def initialize_ollama(self):
-        """
-        Initializes Ollama by checking if the local API is running.
-        """
-        if self.verbose:
-            print("[Config][initialize_ollama] Checking Ollama server...")
+        # Parse the config.txt file to populate these attributes
+        self.load_config()
+        self._initialized = True
 
-        try:
-            response = requests.get(self.ollama_url.replace("/generate", "/info"))
-            if response.status_code == 200:
-                if self.verbose:
-                    print("[Config][initialize_ollama] Ollama server is running.")
-                return True
-            else:
-                print("[Config][initialize_ollama] Ollama server did not respond.")
-                return False
-        except requests.ConnectionError:
-            print("[Config][initialize_ollama] Ollama is not running. Attempting to start Ollama...")
-            self.start_ollama_server()
+    def load_config(self):
+        if not os.path.exists(self.config_path):
+            raise FileNotFoundError(f"config.txt not found at: {self.config_path}")
 
-    def start_ollama_server(self):
-        """
-        Starts the Ollama local API server if it is not running.
-        """
-        try:
-            subprocess.Popen(["ollama", "serve"])
-            print("[Config][start_ollama_server] Ollama server started.")
-        except FileNotFoundError:
-            sys.exit("Ollama CLI not found. Please install Ollama: https://ollama.com")
+        with open(self.config_path, "r", encoding="utf-8") as file:
+            lines = file.readlines()
 
-    # ---------------------
-    # DeepSeek Initialization (if required)
-    # ---------------------
-    def initialize_deepseek(self):
-        """
-        Placeholder for DeepSeek API key or any initialization steps.
-        """
-        if self.verbose:
-            print("[Config][initialize_deepseek] Checking DeepSeek API setup.")
+        for line in lines:
+            # Strip whitespace
+            line = line.strip()
 
-        # Optionally require an API key for DeepSeek if needed
-        self.deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-        if not self.deepseek_api_key:
-            print("[Config] DeepSeek does not require an API key or it’s not set.")
-            # If DeepSeek requires a server to run, add server initialization here.
+            # Skip comments or empty lines
+            if not line or line.startswith("#"):
+                continue
 
-    # ---------------------
-    # API Key Management
-    # ---------------------
-    def validation(self, model):
-        """
-        Validate the input parameters for the dialog operation, ensuring API key presence.
-        """
-        if model.startswith("gpt") or model.startswith("openai"):
-            self.require_api_key("OPENAI_API_KEY", "OpenAI API key", True)
-        elif model == "deepseek":
-            print("[Config] No DeepSeek API key validation needed.")
-        elif model.startswith("ollama"):
-            self.initialize_ollama()
+            # Check if it's a key-value pair of the form KEY:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                key = key.strip()
+                value = value.strip()
+                print(f"DEBUG: Read {key} -> {value}")
 
-    def require_api_key(self, key_name, key_description, is_required):
-        key_exists = bool(os.environ.get(key_name))
-        if self.verbose:
-            print(f"[Config] require_api_key for {key_name}: {key_exists}")
-        if is_required and not key_exists:
-            self.prompt_and_save_api_key(key_name, key_description)
+                if key.upper() == "OPENAI_API_KEY":
+                    # Remove potential < and >
+                    self.openai_api_key = value.strip("<>")
+                elif key.upper() == "LMSTUDIO_API_URL":
+                    self.lmstudio_api_url = value.strip("<>")
+                elif key.upper() == "MODEL":
+                    self.model = value.strip("<>")
+                elif key.upper() == "DEFINE_REGION":
+                    self.define_region = value.strip("<>").lower() == "true"
+                elif key.upper() == "DEBUG":
+                    self.debug = value.strip("<>").lower() == "true"
 
-    def prompt_and_save_api_key(self, key_name, key_description):
-        key_value = input_dialog(
-            title="API Key Required", text=f"Please enter your {key_description}:"
-        ).run()
+    def validation(self, model: str):
+        print(f"DEBUG: Validating model -> {model}")
+        if model.lower().startswith("gpt") or model.lower().startswith("openai"):
+            if not self.openai_api_key:
+                raise ValueError(
+                    "[Config][validation] Missing required OPENAI_API_KEY for an OpenAI-based model."
+                )
 
-        if key_value is None:
-            sys.exit("Operation cancelled by user.")
+if __name__ == '__main__':
+    # Create a config object (reads config.txt automatically)
+    config = Config()
+    
+    # Optionally validate against your current model choice
+    model = config.model or "openai-gpt"
+    config.validation(model)
 
-        if key_value:
-            if key_name == "OPENAI_API_KEY":
-                self.openai_api_key = key_value
-            elif key_name == "DEEPSEEK_API_KEY":
-                self.deepseek_api_key = key_value
-            self.save_api_key_to_env(key_name, key_value)
-            load_dotenv()  # Reload environment variables
-
-    @staticmethod
-    def save_api_key_to_env(key_name, key_value):
-        with open(".env", "a") as file:
-            file.write(f"\n{key_name}='{key_value}'")
+    print("OPENAI_API_KEY:", config.openai_api_key)
+    print("LMSTUDIO_API_URL:", config.lmstudio_api_url)
+    print("MODEL:", config.model)
+    print("DEFINE_REGION:", config.define_region)
+    print("DEBUG:", config.debug)
