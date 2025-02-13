@@ -5,11 +5,9 @@ import json
 import asyncio
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-
 from operate.config import Config  # Corrected import path
 
-# Ensure all messages have "role" and "content" fields
-# ✅ Helper function to format OCR & YOLO data into a readable string
+# Helper function to format OCR & YOLO data into a readable string
 def format_preprocessed_data(data):
     """
     Converts preprocessed OCR and YOLO data into a clean string format.
@@ -17,104 +15,114 @@ def format_preprocessed_data(data):
     """
     if not isinstance(data, dict):
         return "No valid preprocessed data."
-
     formatted_string = "\n".join(
         [f"{key}: {', '.join(map(str, value))}" for key, value in data.items()]
     )
-    
     return f"Preprocessed data with OCR and YOLO:\n{formatted_string}"
 
-# ✅ Ensures messages follow OpenAI's API format
+# Ensures messages follow OpenAI's API format
 def format_messages(messages):
     formatted = []
     for msg in messages:
         if "role" in msg and "content" in msg:
             if msg["content"] is None or not isinstance(msg["content"], str):
-                print(f"[WARNING] Skipping malformed message: {msg}")  # ✅ Debugging
-                continue  # Skip messages with invalid content
+                print(f"[WARNING] Fixing malformed message: {msg}")  # Debugging
+                msg["content"] = ""  # Convert None to empty string
             formatted.append({"role": msg["role"], "content": msg["content"]})
         else:
-            print(f"[ERROR] Malformed message detected: {msg}")  # ✅ Debugging
+            print(f"[ERROR] Malformed message detected: {msg}")
     return formatted
 
 async def call_lmstudio_model(messages, objective, model):
     """
-    Calls the LMStudio API with OpenAI-style streaming and ensures proper message formatting.
+    Calls the LMStudio API with streaming enabled.
+    The function prints tokens as they arrive (so text appears as it's generated)
+    and only returns the full response after the model finishes generating.
+    
+    We also increase the allowed size for preprocessed data.
     """
-
     config = Config()
-    api_source, api_value = config.get_api_source()  # Get API source (LMStudio or OpenAI)
-
-    # Ensure LMStudio API URL has the correct OpenAI-compatible endpoint
+    api_source, api_value = config.get_api_source()  # e.g., ("lmstudio", "http://localhost:8020")
+    
     if api_source == "lmstudio":
-        api_url = api_value.rstrip("/") + "/v1/chat/completions"  # ✅ Ensure correct endpoint
+        api_url = api_value.rstrip("/") + "/v1/chat/completions"
     else:
-        raise RuntimeError("No valid API source found.")
+        raise RuntimeError("No valid API source found for LMStudio.")
 
     headers = {"Content-Type": "application/json"}
 
-    # ✅ Extract OCR & YOLO data and properly format it as a string
-    preprocessed_data_message = None
-    if len(messages) > 1 and "Preprocessed data with OCR and YOLO" in messages[1]["content"]:
-        preprocessed_data_message = {
-            "role": "system",
-            "content": format_preprocessed_data(json.loads(messages[1]["content"]))  # ✅ Convert dictionary to string
-        }
+    # Combine the objective and provided messages.
+    formatted_messages = (
+        [{"role": "system", "content": objective if objective else "Default objective"}] +
+        format_messages(messages)
+    )
 
-    # ✅ Ensure valid message format
-    formatted_messages = [{"role": "system", "content": objective}] + format_messages(messages)
+    # --- Troubleshooting: Adjust truncation threshold ---
+    # Increase threshold to allow more data (e.g., 5000 characters)
+    for msg in formatted_messages:
+        if msg["role"] == "system" and "Preprocessed data summary:" in msg["content"]:
+            original_content = msg["content"]
+            max_length = 5000  # Allow a larger amount of data
+            if len(original_content) > max_length:
+                print(f"[DEBUG] Preprocessed data message length: {len(original_content)} exceeds {max_length}. Truncating.")
+                truncated_content = original_content[:max_length] + "\n... [truncated]"
+                msg["content"] = truncated_content
+            else:
+                print(f"[DEBUG] Preprocessed data message length: {len(original_content)} is within limits.")
 
-    # ✅ If preprocessed data exists, overwrite its original entry
-    if preprocessed_data_message:
-        formatted_messages[1] = preprocessed_data_message  # ✅ Ensures a single message with formatted data
+    # Log the sanitized preprocessed data for inspection.
+    for msg in formatted_messages:
+        if msg["role"] == "system" and "Preprocessed data summary:" in msg["content"]:
+            print("[DEBUG] Sanitized preprocessed data message:")
+            print(msg["content"])
 
+    # Prepare payload with streaming enabled.
     payload = {
         "model": model,
-        "messages": formatted_messages,  # ✅ Use fixed messages format
+        "messages": formatted_messages,
         "max_tokens": 500,
         "temperature": 0.7,
         "top_p": 0.9,
-        "stream": True,  # ✅ Enable streaming response
+        "stream": True  # Enable streaming so tokens appear as they're generated.
     }
 
-    try:
-        print(f"[DEBUG] Sending request to {api_source.upper()} API ({api_url}) with model: {model}")
-        print(f"[DEBUG] Payload: {json.dumps(payload, indent=2)}")  # ✅ Pretty print payload for debugging
+    print(f"[DEBUG] Sending request to LMStudio API ({api_url}) with model: {model}")
+    print(f"[DEBUG] Final Payload Before Sending:\n{json.dumps(payload, indent=2)}")
 
+    try:
         with requests.post(api_url, json=payload, headers=headers, stream=True) as response:
             response.raise_for_status()
 
-            full_response = ""  # ✅ Store the full response
+            full_response = ""
+            # Stream and print tokens as they arrive.
             for line in response.iter_lines():
-                if line:
-                    decoded_line = line.decode("utf-8").strip()
-                    if decoded_line.startswith("data: "):  # ✅ Handle OpenAI streaming format
-                        try:
-                            json_data = json.loads(decoded_line[6:])  # Remove "data: "
-                            if "choices" in json_data and len(json_data["choices"]) > 0:
-                                delta = json_data["choices"][0].get("delta", {})
-                                content = delta.get("content", "")
-
-                                # ✅ Append content without extra line breaks
-                                full_response += content
-                                print(content, end="", flush=True)  # ✅ Stream smoothly in console
-
-                                # ✅ Stop if `finish_reason` is set
-                                if json_data["choices"][0].get("finish_reason") is not None:
-                                    break
-                        except json.JSONDecodeError:
-                            print("[ERROR] Failed to parse streamed JSON chunk:", decoded_line)
-
-        print("\n[DEBUG] Full Response Received:", full_response)
-        return full_response if full_response.strip() else "[ERROR] No valid response from the model."
+                if not line:
+                    continue
+                decoded_line = line.decode("utf-8").strip()
+                if decoded_line.startswith("data: "):
+                    try:
+                        # Parse the JSON chunk to extract the token.
+                        json_data = json.loads(decoded_line[6:])
+                        token = json_data["choices"][0].get("delta", {}).get("content", "")
+                        # Print token as it's generated.
+                        print(token, end="", flush=True)
+                        full_response += token
+                        # Stop when finish_reason is provided.
+                        if json_data["choices"][0].get("finish_reason") is not None:
+                            break
+                    except json.JSONDecodeError:
+                        print("[ERROR] Failed to parse streamed JSON chunk:", decoded_line)
+            print("\n[DEBUG] Full Response Received:", full_response)
+            return full_response if full_response.strip() else "[ERROR] No valid response from the model."
 
     except requests.RequestException as e:
-        print(f"[ERROR] Failed to connect to {api_source.upper()} API: {e}")
-        return f"[ERROR] API connection failed: {e}"
-
+        error_msg = f"[ERROR] API connection failed: {e}"
+        print(error_msg)
+        return error_msg
     except Exception as e:
-        print(f"[ERROR] Unexpected error in call_lmstudio_model: {e}")
-        return f"[ERROR] Unexpected error: {e}"
+        error_msg = f"[ERROR] Unexpected error in call_lmstudio_model: {e}"
+        print(error_msg)
+        return error_msg
 
 async def test_lmstudio(model):
     test_messages = [{"role": "user", "content": "tell me about google"}]
@@ -122,7 +130,7 @@ async def test_lmstudio(model):
 
     try:
         response = await call_lmstudio_model(test_messages, test_objective, model)
-        print("Test Response:", response)
+        print("\nTest Response:", response)
     except Exception as e:
         print("Error during test:", e)
 

@@ -18,8 +18,6 @@ A custom prompt
 # SYSTEM_PROMPT_OCR_YOLO - EXTREMELY ROBUST AND LENGTHY - DO NOT TOUCH!
 ###############################################################################
 SYSTEM_PROMPT_OCR_YOLO = """
-Above is OCR and YOLO information for your use while completing the objective below!
-
 **To interpret this data you must know** each item is formatted by: {{ "Type": "value", "Contents": "value", "Coordinates": "X, Y" }}
 Type: The item's object identifier.
 Contents: The item's object data (ex: the text) (will not be there if no associated data)

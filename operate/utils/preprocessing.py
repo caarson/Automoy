@@ -13,13 +13,43 @@ from operate.utils.screenshot import capture_screen_with_cursor
 # Initialize YOLO detector
 yolo_detector = YOLODetector()
 
+def simplify_list(lst, label, max_items=10):
+    """
+    Helper to join a list of strings with a label. If there are more than
+    max_items, only show the first few followed by a summary count.
+    """
+    total = len(lst)
+    if total == 0:
+        return f"{label} (0): None"
+    if total <= max_items:
+        items = " | ".join(lst)
+    else:
+        items = " | ".join(lst[:max_items]) + f" | ... ({total - max_items} more)"
+    return f"{label} ({total}): {items}"
+
+def simplify_preprocessed_results(data):
+    """
+    Convert the preprocessed OCR and YOLO data into a concise summary string.
+    """
+    matched_summary = simplify_list(data.get("matched_results", []), "Matched Results")
+    ocr_summary = simplify_list(data.get("ocr_results", []), "OCR Results")
+    yolo_summary = simplify_list(data.get("yolo_results", []), "YOLO Results")
+    summary = (
+        f"Preprocessed Data Summary:\n\n"
+        f"{matched_summary}\n\n"
+        f"{ocr_summary}\n\n"
+        f"{yolo_summary}"
+    )
+    return summary
+
 async def preprocess_with_ocr_and_yolo(screenshot_path):
     """
     Preprocess the screen using OCR and YOLO to extract relevant UI elements and text.
-    Args:
-        screenshot_path (str): Path to the screenshot for processing.
+
     Returns:
-        dict: Simplified matched, OCR, and YOLO results with only necessary content and coordinates.
+        tuple (summary_string, full_data_dict):
+            - summary_string: A short, human-readable summary of matched, OCR, and YOLO results.
+            - full_data_dict: A dictionary containing full lists of matched_results, ocr_results, and yolo_results.
     """
     print("[preprocessing] Performing OCR and YOLO preprocessing...")
 
@@ -38,29 +68,26 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
         matched = False
         for ocr_obj in ocr_results:
             polygon, text = ocr_obj[0], ocr_obj[1]
-            
-            # Match YOLO and OCR results if coordinates are similar
-            if any(
-                abs(p[0] / 1920 - yolo_x) < 0.1 and abs(p[1] / 1080 - yolo_y) < 0.1
-                for p in polygon
-            ):
+            # Match if any point in the OCR polygon is near the YOLO center
+            if any(abs(p[0] / 1920 - yolo_x) < 0.1 and abs(p[1] / 1080 - yolo_y) < 0.1 for p in polygon):
                 if text:
-                    matched_results.append(f"{{text, {text}, {yolo_x} {yolo_y}}}")
+                    matched_results.append(f"text: {text} @ ({yolo_x}, {yolo_y})")
                 else:
-                    matched_results.append(f"{{button, {yolo_x} {yolo_y}}}")
+                    matched_results.append(f"button @ ({yolo_x}, {yolo_y})")
                 matched = True
-                break  # Stop checking other OCR polygons for this YOLO object
-    
+                break
         if not matched:
-            matched_results.append(f"{{button, {yolo_x} {yolo_y}}}")
+            matched_results.append(f"button @ ({yolo_x}, {yolo_y})")
 
-    # Simplified OCR and YOLO results
+    # Simplify OCR results: if text exists, include text and first coordinate; otherwise mark as button.
     ocr_simplified = [
-        f"{{text, {obj[1]}, {obj[0][0][0]} {obj[0][0][1]}}}" if obj[1] else f"{{button, {obj[0][0][0]} {obj[0][0][1]}}}"
+        f"text: {obj[1]} @ ({obj[0][0][0]}, {obj[0][0][1]})" if obj[1]
+        else f"button @ ({obj[0][0][0]}, {obj[0][0][1]})"
         for obj in ocr_results
     ]
+    # Simplify YOLO results: simply output button coordinates.
     yolo_simplified = [
-        f"{{button, {obj['x']} {obj['y']}}}"
+        f"button @ ({obj['x']}, {obj['y']})"
         for obj in yolo_results
     ]
 
@@ -68,13 +95,26 @@ async def preprocess_with_ocr_and_yolo(screenshot_path):
     print(f"[preprocessing] OCR Results: {ocr_simplified}")
     print(f"[preprocessing] YOLO Results: {yolo_simplified}")
     
-    return {
+    # Build the full data dictionary.
+    full_data = {
         "matched_results": matched_results,
         "ocr_results": ocr_simplified,
         "yolo_results": yolo_simplified
     }
+    
+    # Create a short summary string to include in the initial prompt.
+    summary_string = (
+        f"Preprocessed Data Summary:\n"
+        f"Matched: {len(matched_results)} items\n"
+        f"OCR: {len(ocr_simplified)} items\n"
+        f"YOLO: {len(yolo_simplified)} items\n"
+        "If you need additional details on OCR or YOLO, please request them."
+    )
 
-# Main script
+    # Return both the short summary and the full data
+    return summary_string, full_data
+
+# Main script for testing
 if __name__ == "__main__":
     import asyncio
 
@@ -92,7 +132,7 @@ if __name__ == "__main__":
         if os.path.exists(screenshot_path):
             print(f"[preprocessing] Screenshot saved to: {screenshot_path}")
             results = await preprocess_with_ocr_and_yolo(screenshot_path)
-            print("[preprocessing] Final Results:")
+            print("[preprocessing] Final Simplified Results:")
             print(results)
         else:
             print(f"[ERROR] Screenshot not found at {screenshot_path}.")
