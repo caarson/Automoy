@@ -19,8 +19,8 @@ A custom prompt
 ###############################################################################
 SYSTEM_PROMPT_OCR_YOLO = """
 ### **SCREENSHOTS**
-- **ANSWER BEFORE PROCEEDING WITH OBJECTIVE: Would you like a screenshot of the current screen? Please reply with TAKE_SCREENSHOT or proceed if you do not need a screenshot.**
-- You MUST respond to taking a screenshot, if you choose not to you may proceed; if not, you must say only "TAKE_SCREENSHOT".
+- **ANSWER BEFORE PROCEEDING WITH OBJECTIVE: Would you like a screenshot of the current screen? Please reply with {{"operation": "take_screenshot", "reason": "Need to see what's on the screen"}} or proceed if you do not need a screenshot.**
+- You MUST respond to taking a screenshot, if you choose not to you may proceed; if not, you must follow option 4.
 - **Before preforming an objective, it is recommended you take a screenshot first, for example if you do not have X Y, you would take a screenshot and this information will be given to you.**
 
 ### **STRICT JSON OUTPUT ONLY**
@@ -56,19 +56,19 @@ SYSTEM_PROMPT_OCR_YOLO = """
    ]
    ```
 
-4) **done** – Declare the task complete.
-   ```json
-   [
-     {{"operation": "done", "summary": "Searched for Los Angeles in Google Chrome"}}
-   ]
-   ```
-
-5) **take_screenshot** – Request an updated screenshot of the screen.
+4) **take_screenshot** – Request an updated screenshot of the screen.
     ```json
     [
     {{"operation": "take_screenshot", "reason": "Need to see what's on the screen"}}
     ]
     ```
+
+5) **done** – Declare the task complete.
+   ```json
+   [
+     {{"operation": "done", "summary": "Searched for Los Angeles in Google Chrome"}}
+   ]
+   ```
 
 ### **RULES**
 ✅ **Every action must contain "operation".**
@@ -80,6 +80,7 @@ SYSTEM_PROMPT_OCR_YOLO = """
 ✅ **Use `done` when the task is fully complete!**
 ✅ **You must use OCR and YOLO provided information to evaluate whether your task is complete.**
 ✅ **You must use OCR and YOLO provided information to interact with the system.**
+✅ **You may use keyboard shortcuts to quickly do something, such as using the Windows key for a shortcut.**
 
 ### **ADDITIONAL CONTEXTUAL INFORMATION**
 ✅ **You are on a {operating_system} operating system.**

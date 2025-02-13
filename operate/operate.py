@@ -3,6 +3,7 @@ import os
 import time
 import asyncio
 import platform
+import json
 
 from operate.utils.prompts import (
     USER_QUESTION,
@@ -34,6 +35,9 @@ async def ask_screenshot_preference(chosen_model, objective, session_id, screens
 
     We remove the extra system role ("screenshot preference") and directly feed the system prompt.
     The user message is constructed from user_message_objective so it matches the new objective.
+
+    The AI can respond with a JSON array, e.g.:
+        [{"operation": "take_screenshot", "reason": "Need to see what's on the screen"}]
     """
     from operate.model_handlers.lmstudio_handler import call_lmstudio_model
     system_prompt = get_system_prompt(chosen_model, objective)
@@ -42,9 +46,6 @@ async def ask_screenshot_preference(chosen_model, objective, session_id, screens
     user_message_objective = (
         f"Objective: {objective}. "
     )
-
-    # We do NOT include the old line:
-    #     {"role": "system", "content": "screenshot preference"}
 
     messages = [
         {"role": "system", "content": system_prompt},
@@ -61,7 +62,7 @@ def main(model=None, terminal_prompt=None, voice_mode=False, verbose_mode=False,
     Steps:
       1. If no objective is provided, prompt the user using USER_QUESTION.
       2. Ask the AI if it wants a screenshot.
-         - If the AI replies with TAKE_SCREENSHOT, run OCR/YOLO preprocessing.
+         - If the AI replies with a JSON action {"operation": "take_screenshot"}, run OCR/YOLO.
          - Otherwise, skip screenshot processing.
       3. Build the conversation payload with two messages:
            - A system message containing the robust prompt from prompts.py.
@@ -138,21 +139,36 @@ def main(model=None, terminal_prompt=None, voice_mode=False, verbose_mode=False,
             return
         terminal_prompt = user_input
 
-    # Ask the AI if it wants a screenshot.
-    print("[INFO] Asking AI if it wants a screenshot of the current screen...")
+    print("[INFO] Asking AI if it wants a screenshot of the current screen (JSON-based)...")
     pref_response = asyncio.run(ask_screenshot_preference(chosen_model, terminal_prompt, session_id, screenshot_path))
-    print(f"[DEBUG] Screenshot preference response: {pref_response}")
+    print(f"[DEBUG] Screenshot preference response (raw): {pref_response}")
 
-    if "take_screenshot" in pref_response.lower():
-        from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
-        summary_string, full_data = asyncio.run(preprocess_with_ocr_and_yolo(screenshot_path))
-    else:
+    # Attempt to parse the AI's response as a JSON array
+    # E.g. [{"operation": "take_screenshot", "reason": "Need to see what's on the screen"}]
+    try:
+        parsed_actions = json.loads(pref_response)
+        if isinstance(parsed_actions, list):
+            # Check each action
+            take_screenshot_requested = any(
+                (action.get("operation") == "take_screenshot")
+                for action in parsed_actions
+            )
+            if take_screenshot_requested:
+                from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
+                summary_string, full_data = asyncio.run(preprocess_with_ocr_and_yolo(screenshot_path))
+            else:
+                summary_string = "No screenshot provided."
+                full_data = {}
+        else:
+            print("[DEBUG] The AI did not return a JSON list.")
+            summary_string = "No screenshot provided."
+            full_data = {}
+    except json.JSONDecodeError:
+        print("[DEBUG] The AI response is not valid JSON; no screenshot taken.")
         summary_string = "No screenshot provided."
         full_data = {}
 
     # Build the conversation payload with two messages:
-    #   1. System message: robust prompt from prompts.py.
-    #   2. User message: objective.
     system_message_prompt = get_system_prompt(chosen_model, terminal_prompt)
     user_message_objective = f"Objective: {terminal_prompt}"
 
