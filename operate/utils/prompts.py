@@ -63,12 +63,20 @@ SYSTEM_PROMPT_OCR_YOLO = """
    ]
    ```
 
+5) **take_screenshot** – Request an updated screenshot of the screen.
+    ```json
+    [
+    {{"operation": "take_screenshot", "reason": "Need to see what's on the screen"}}
+    ]
+    ```
+
 ### **RULES**
 ✅ **Every action must contain "operation".**
 ✅ **Only use `click`, `press`, or `write` where applicable.**
 ✅ **Ensure valid JSON structure.**
 ✅ **Every string value (e.g., URLs, text) must be enclosed in double quotes ("").**
 ✅ **Ensure the response is a valid JSON array!**
+✅ **You will have multiple steps, complete one at a time, for example, opening an application involves waiting between the click action and the application opening, you wouldn't be able to type something into it before taking a screenshot and clicking on the appropriate spot.**
 ✅ **Use `done` when the task is fully complete!**
 ✅ **You must use OCR and YOLO provided information to evaluate whether your task is complete.**
 ✅ **You must use OCR and YOLO provided information to interact with the system.**
