@@ -2,6 +2,7 @@ from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
 from operate.model_handlers.openai_handler import call_openai_model
 from operate.model_handlers.lmstudio_handler import call_lmstudio_model
 from operate.exceptions import ModelNotRecognizedException
+from operate.config import Config  # Import Config class
 
 async def get_next_action(model, messages, objective, session_id, screenshot_path):
     print(f"[handlers_api] Using model: {model}")
@@ -16,20 +17,17 @@ async def get_next_action(model, messages, objective, session_id, screenshot_pat
         "content": f"Preprocessed data with OCR and YOLO: {combined_results}"
     })
 
-    # Route to the appropriate model handler
-    if model.startswith("gpt") or "openai" in model:
-        if model == "gpt-4-with-ocr-and-yolo":
-            model = "gpt-4"
-            response = await call_openai_model(messages, objective, model)
-            if not isinstance(response, list):
-                print(f"[ERROR] OpenAI response is not a list: {response}")
-                return [], None
-            print(f"[DEBUG] OpenAI Response: {response}")
-            return response, None
+    config = Config()  # Ensure Config is initialized
+    api_source, _ = config.get_api_source()
 
-    if model.startswith("lmstudio"):
-        response = await call_lmstudio_model(messages, objective, model)
-        print(f"[DEBUG] LMStudio Response: {response}")
+    if api_source == "openai":
+        response = await call_openai_model(messages, objective, model)
+        print(f"[DEBUG] OpenAI Response: {response}")  # ✅ Debug Response
         return response, None
 
-    raise ModelNotRecognizedException(f"Model '{model}' not recognized.")
+    if api_source == "lmstudio":
+        response = await call_lmstudio_model(messages, objective, model)
+        print(f"[DEBUG] LMStudio Response: {response}")  # ✅ Debug Response
+        return response, None
+
+    raise ModelNotRecognizedException(model)
