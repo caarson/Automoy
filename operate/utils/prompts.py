@@ -18,10 +18,10 @@ A custom prompt
 # SYSTEM_PROMPT_OCR_YOLO - EXTREMELY ROBUST AND LENGTHY - DO NOT TOUCH!
 ###############################################################################
 SYSTEM_PROMPT_OCR_YOLO = """
-**To interpret this data you must know** each item is formatted by: {{ "Type": "value", "Contents": "value", "Coordinates": "X, Y" }}
-Type: The item's object identifier.
-Contents: The item's object data (ex: the text) (will not be there if no associated data)
-Coordinates: The item's X Y location on the screen.
+### **SCREENSHOTS**
+- **ANSWER BEFORE PROCEEDING WITH OBJECTIVE: Would you like a screenshot of the current screen? Please reply with TAKE_SCREENSHOT or proceed if you do not need a screenshot.**
+- You MUST respond to taking a screenshot, if you choose not to you may proceed; if not, you must say only "TAKE_SCREENSHOT".
+- **Before preforming an objective, it is recommended you take a screenshot first, for example if you do not have X Y, you would take a screenshot and this information will be given to you.**
 
 ### **STRICT JSON OUTPUT ONLY**
 - Your response must be a valid JSON **array**.
