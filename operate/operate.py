@@ -23,6 +23,9 @@ from operate.utils.operating_system import OperatingSystem
 from operate.model_handlers.handlers_apis import get_next_action
 from operate.utils.screenshot import capture_screen_with_cursor
 
+# NEW IMPORT: the smart parser
+from operate.utils.llm_smart_json_parser import parse_smart_json
+
 # Load configuration
 config = Config()
 operating_system = OperatingSystem()
@@ -54,6 +57,7 @@ async def ask_screenshot_preference(chosen_model, objective, session_id, screens
 
     response = await call_lmstudio_model(messages, "screenshot preference", chosen_model)
     return response
+
 
 def main(model=None, terminal_prompt=None, voice_mode=False, verbose_mode=False, define_region=False):
     """
@@ -143,28 +147,21 @@ def main(model=None, terminal_prompt=None, voice_mode=False, verbose_mode=False,
     pref_response = asyncio.run(ask_screenshot_preference(chosen_model, terminal_prompt, session_id, screenshot_path))
     print(f"[DEBUG] Screenshot preference response (raw): {pref_response}")
 
-    # Attempt to parse the AI's response as a JSON array
-    # E.g. [{"operation": "take_screenshot", "reason": "Need to see what's on the screen"}]
-    try:
-        parsed_actions = json.loads(pref_response)
-        if isinstance(parsed_actions, list):
-            # Check each action
-            take_screenshot_requested = any(
-                (action.get("operation") == "take_screenshot")
-                for action in parsed_actions
-            )
-            if take_screenshot_requested:
-                from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
-                summary_string, full_data = asyncio.run(preprocess_with_ocr_and_yolo(screenshot_path))
-            else:
-                summary_string = "No screenshot provided."
-                full_data = {}
+    # Use the "parse_smart_json" function from llm_smart_json_parser to handle code fences or extra text.
+    parsed_actions = parse_smart_json(pref_response)
+    if parsed_actions and isinstance(parsed_actions, list):
+        take_screenshot_requested = any(
+            (action.get("operation") == "take_screenshot")
+            for action in parsed_actions
+        )
+        if take_screenshot_requested:
+            from operate.utils.preprocessing import preprocess_with_ocr_and_yolo
+            summary_string, full_data = asyncio.run(preprocess_with_ocr_and_yolo(screenshot_path))
         else:
-            print("[DEBUG] The AI did not return a JSON list.")
             summary_string = "No screenshot provided."
             full_data = {}
-    except json.JSONDecodeError:
-        print("[DEBUG] The AI response is not valid JSON; no screenshot taken.")
+    else:
+        print("[DEBUG] The AI response is not valid JSON or is not a list; no screenshot taken.")
         summary_string = "No screenshot provided."
         full_data = {}
 
